@@ -3,3 +3,10 @@ mockup-collapsed.html
 .DS_Store
 build/
 DerivedData/
+
+.build/
+*.xcodeproj
+
+dist/
+vendor/mediaremote-adapter.pl
+vendor/MediaRemoteAdapter.framework
