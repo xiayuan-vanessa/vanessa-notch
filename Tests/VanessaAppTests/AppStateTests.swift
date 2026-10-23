@@ -25,7 +25,7 @@ final class AppStateTests: XCTestCase {
     private func playing(_ title: String, _ artist: String, lrcText: String = "行") -> NowPlayingState {
         NowPlayingState(title: title, artist: artist, album: "", artworkData: nil,
                         duration: 200, elapsed: 1, sampledAt: Date(timeIntervalSince1970: 1000),
-                        rate: 1, isPlaying: true, sourceBundleID: neteaseBundleIDDefault)
+                        rate: 1, isPlaying: true, sourceBundleID: "com.netease.163music")
     }
 
     func test_initialState_isIdle() {

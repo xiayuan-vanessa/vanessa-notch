@@ -25,6 +25,7 @@ struct PlayingPanelView: View {
     var fontSize: CGFloat
     var width: CGFloat
     var height: CGFloat
+    var accentColor: Color = .notchAccent
 
     var body: some View {
         VStack(spacing: 3) {
@@ -37,7 +38,8 @@ struct PlayingPanelView: View {
             .frame(height: 30)
             // 歌词:刘海正下方居中。
             KaraokeLineView(text: display.lineText, words: display.words,
-                            position: display.position, fontSize: fontSize)
+                            position: display.position, fontSize: fontSize,
+                            accentColor: accentColor)
             Spacer(minLength: 0)
         }
         .padding(.top, 2)

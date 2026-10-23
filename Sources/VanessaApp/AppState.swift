@@ -14,6 +14,10 @@ public struct PlayingDisplay: Equatable, Sendable {
     public var words: [Word]
     public var position: LyricPosition
     public var isPlaying: Bool
+    /// 封面主色调 RGB(0...1)，用于歌词文字着色。
+    public var accentR: Double
+    public var accentG: Double
+    public var accentB: Double
 }
 
 /// 全局 UI 状态。
@@ -34,9 +38,11 @@ public final class AppState: ObservableObject {
 
     private let provider: NowPlayingProvider
     private let repository: LyricsRepository
-    private let neteaseBundleID: String
 
     /// 当前歌曲的唯一标识，用于判断是否换歌。
+    /// 当前封面主色调 RGB；nil 时使用默认色。
+    private var accentRGB: (r: Double, g: Double, b: Double)?
+
     private var currentIdentity: String?
     /// 当前歌词数据。
     private var currentLyrics: Lyrics = Lyrics(lines: [])
@@ -51,11 +57,9 @@ public final class AppState: ObservableObject {
     /// 30fps 刷新定时器。
     private var ticker: Timer?
 
-    public init(provider: NowPlayingProvider, repository: LyricsRepository,
-                neteaseBundleID: String = neteaseBundleIDDefault) {
+    public init(provider: NowPlayingProvider, repository: LyricsRepository) {
         self.provider = provider
         self.repository = repository
-        self.neteaseBundleID = neteaseBundleID
     }
 
     /// 启动订阅流并开启 30fps 刷新定时器。
@@ -86,21 +90,46 @@ public final class AppState: ObservableObject {
             currentIdentity = nil
             latestState = nil
             clock = nil
+            accentRGB = nil
             ui = .idle
             return
         }
+        // 仅在时序字段变化时重建时钟，避免元数据 diff 引发位置微跳
+        if latestState == nil || timingChanged(old: latestState!, new: state) {
+            clock = PlaybackClock(state: state)
+        }
         latestState = state
-        clock = PlaybackClock(state: state)
-        // 仅在换歌时触发歌词拉取
+        // 封面图可能晚于元数据到达，补提取主色调（后台线程避免阻塞 UI）
+        if accentRGB == nil, let data = state.artworkData {
+            accentRGB = await Task.detached {
+                DominantColorExtractor.extract(from: data)
+            }.value
+        }
+        // 换歌时触发歌词拉取；duration=0 时匹配可能失败，不锁定 identity 让后续重试
         if state.songIdentity != currentIdentity {
             currentIdentity = state.songIdentity
             await loadLyrics(for: state)
+            if fallbackText != nil && state.duration <= 0 {
+                currentIdentity = nil
+            }
         }
         refresh()
     }
 
     /// 异步拉取歌词：matched 填充 lyrics；低置信度或异常降级为「歌名 - 歌手」。
     private func loadLyrics(for state: NowPlayingState) async {
+        // 立即清空旧歌词，用新歌降级文案过渡，避免异步间隙中旧内容闪现
+        currentLyrics = Lyrics(lines: [])
+        fallbackText = "\(state.title) - \(state.artist)"
+
+        // 提取封面主色调（后台线程避免阻塞 UI）
+        if let data = state.artworkData {
+            accentRGB = await Task.detached {
+                DominantColorExtractor.extract(from: data)
+            }.value
+        } else {
+            accentRGB = nil
+        }
         do {
             let result = try await repository.lookup(
                 title: state.title,
@@ -156,6 +185,9 @@ public final class AppState: ObservableObject {
             words = []
         }
 
+        let ar = accentRGB?.r ?? 229.0 / 255
+        let ag = accentRGB?.g ?? 199.0 / 255
+        let ab = accentRGB?.b ?? 192.0 / 255
         ui = .playing(PlayingDisplay(
             title: state.title,
             artist: state.artist,
@@ -163,8 +195,17 @@ public final class AppState: ObservableObject {
             lineText: lineText,
             words: words,
             position: position,
-            isPlaying: state.isPlaying
+            isPlaying: state.isPlaying,
+            accentR: ar, accentG: ag, accentB: ab
         ))
+    }
+
+    /// 判断两次状态之间时序相关字段是否有变化。
+    private func timingChanged(old: NowPlayingState, new: NowPlayingState) -> Bool {
+        old.elapsed != new.elapsed
+            || old.sampledAt != new.sampledAt
+            || old.rate != new.rate
+            || old.isPlaying != new.isPlaying
     }
 
     /// 标记 provider 不可用，进入警告态（由 AppDelegate 在 provider 初始化失败时调用）。

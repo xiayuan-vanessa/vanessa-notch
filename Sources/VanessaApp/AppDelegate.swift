@@ -31,10 +31,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         appState = AppState(provider: provider, repository: repository)
         appState.lyricLeadMs = settings.lyricOffsetMs   // 初始歌词偏移
 
-        // 常驻根视图:观察 AppState,内容更新由 SwiftUI 内部完成,不每帧重建窗口。
+        // 常驻根视图:用 MorphingNotchShape 变形;收缩动画结束后回调缩小窗口。
         let root = RootView(appState: appState, settings: settings,
                             onOpenSettings: { [weak self] in self?.openSettings() },
-                            onQuit: { NSApp.terminate(nil) })
+                            onQuit: { NSApp.terminate(nil) },
+                            onShrinkComplete: { [weak self] in
+                                self?.windowController.contentSize = Self.idleSize
+                            })
         windowController = NotchWindowController(rootView: AnyView(root))
         windowController.contentSize = playingSize()   // 初始给播放尺寸(取自设置)
         windowController.observeScreenChanges()
@@ -73,18 +76,28 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 上一次的状态种类(0 空闲 / 1 警告 / 2 播放),用于避免重复设尺寸。
     private var lastKind = -1
 
-    /// 仅在状态种类变化时调整窗口尺寸(内容由 RootView 自行刷新)。
+    /// 仅在状态种类变化时调整窗口尺寸。
+    /// idle → playing：立即扩大窗口，变形动画由 RootView 驱动。
+    /// playing → idle：窗口延迟收缩，等 RootView 动画完成后通过 onShrinkComplete 回调。
     private func adjustWindow(for ui: AppUIState) {
         let kind: Int
-        let size: CGSize
         switch ui {
-        case .idle:    kind = 0; size = Self.idleSize
-        case .warning: kind = 1; size = Self.idleSize; adapterAvailable = false
-        case .playing: kind = 2; size = playingSize()
+        case .idle:    kind = 0
+        case .warning: kind = 1; adapterAvailable = false
+        case .playing: kind = 2
         }
         guard kind != lastKind else { return }
+        let prevKind = lastKind
         lastKind = kind
-        windowController.contentSize = size   // didSet 会重新定位
+
+        if kind == 2 {
+            // → playing：立即扩大，动画由 RootView 驱动
+            windowController.contentSize = playingSize()
+        } else if prevKind == 2 {
+            // playing → idle/warning：不立即收缩，等 RootView 动画结束回调
+        } else {
+            windowController.contentSize = Self.idleSize
+        }
     }
 
     /// 状态栏图标点击:左键打开设置,右键弹出「偏好设置 / 退出」菜单。

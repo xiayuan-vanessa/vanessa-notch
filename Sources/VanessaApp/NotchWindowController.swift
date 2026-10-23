@@ -58,6 +58,13 @@ public final class NotchWindowController {
         return CGSize(width: notchWidth > 0 ? notchWidth : 200, height: top)
     }
 
+    /// 延迟收缩窗口（供变形动画完成后调用）。
+    public func shrinkAfterDelay(_ size: CGSize, delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.contentSize = size
+        }
+    }
+
     /// 注册屏幕参数变化通知,变化时重定位。
     public func observeScreenChanges() {
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,

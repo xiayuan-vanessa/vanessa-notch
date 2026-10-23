@@ -9,7 +9,6 @@ public final class MediaRemoteNowPlayingProvider: NowPlayingProvider, @unchecked
     private let perlPath: String
     private let scriptPath: String
     private let frameworkPath: String
-    private let neteaseBundleID: String
     private var process: Process?
     private var buffer = Data()
     /// 累积的完整 payload(diff 增量行会合并进来,full 行会整体替换)。
@@ -22,12 +21,10 @@ public final class MediaRemoteNowPlayingProvider: NowPlayingProvider, @unchecked
     ///   - scriptPath: 内嵌的 mediaremote-adapter.pl 绝对路径。
     ///   - frameworkPath: 内嵌的 MediaRemoteAdapter.framework 绝对路径。
     public init(scriptPath: String, frameworkPath: String,
-                perlPath: String = "/usr/bin/perl",
-                neteaseBundleID: String = neteaseBundleIDDefault) {
+                perlPath: String = "/usr/bin/perl") {
         self.perlPath = perlPath
         self.scriptPath = scriptPath
         self.frameworkPath = frameworkPath
-        self.neteaseBundleID = neteaseBundleID
         var cont: AsyncStream<NowPlayingState?>.Continuation!
         self.states = AsyncStream { cont = $0 }
         self.continuation = cont
@@ -82,11 +79,11 @@ public final class MediaRemoteNowPlayingProvider: NowPlayingProvider, @unchecked
                   (obj["type"] as? String) == "data" else { continue }
             let payload = (obj["payload"] as? [String: Any]) ?? [:]
             if (obj["diff"] as? Bool) == true {
-                merged.merge(payload) { _, new in new }   // 增量:合并变化字段
+                merged.merge(payload) { _, new in new }
             } else {
-                merged = payload                           // 完整快照:整体替换
+                merged = payload
             }
-            let state = AdapterEventDecoder.decode(payload: merged, sampledAt: Date(), neteaseBundleID: neteaseBundleID)
+            let state = AdapterEventDecoder.decode(payload: merged, sampledAt: Date())
             continuation.yield(state)
         }
     }

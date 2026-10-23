@@ -116,17 +116,31 @@ public enum DominantColorExtractor {
 
     // MARK: - 主色调提取
 
+    /// 黑底上文字的最低感知亮度（ITU-R BT.601 加权）
+    private static let minLuminance: Double = 0.5
+
     /// 从色相桶中取权重最大的桶，计算该桶内的加权平均 RGB。
+    /// 结果保证最低感知亮度，避免在黑色刘海背景上不可见。
     /// - Parameter buckets: 12 个色相桶
-    /// - Returns: 加权平均 RGB；无有效桶时返回 nil
+    /// - Returns: 归一化 RGB；无有效桶时返回 nil
     private static func dominantRGB(from buckets: [HueBucket]) -> (r: Double, g: Double, b: Double)? {
         guard let best = buckets.max(by: { $0.totalWeight < $1.totalWeight }),
               best.totalWeight > 0 else {
             return nil
         }
-        let r = best.weightedR / best.totalWeight
-        let g = best.weightedG / best.totalWeight
-        let b = best.weightedB / best.totalWeight
+        var r = best.weightedR / best.totalWeight
+        var g = best.weightedG / best.totalWeight
+        var b = best.weightedB / best.totalWeight
+
+        // 用感知亮度判断（蓝色权重低，对应人眼对蓝色不敏感）
+        let lum = 0.299 * r + 0.587 * g + 0.114 * b
+        if lum > 0 && lum < minLuminance {
+            let scale = minLuminance / lum
+            r = min(r * scale, 1.0)
+            g = min(g * scale, 1.0)
+            b = min(b * scale, 1.0)
+        }
+
         return (r: r, g: g, b: b)
     }
 

@@ -7,16 +7,17 @@ struct KaraokeLineView: View {
     let words: [Word]
     let position: LyricPosition
     var fontSize: CGFloat = 13
+    var accentColor: Color = .notchAccent
 
     var body: some View {
         if words.isEmpty {
             // 无逐字信息(降级文案/纯 LRC):直接以主题色显示,保持清晰。
-            base.foregroundStyle(Color.notchAccent)
+            base.foregroundStyle(accentColor)
         } else {
             // 有逐字信息:已唱用主题色,未唱半透明,遮罩按进度从左推进。
             ZStack {
-                base.foregroundStyle(Color.notchAccent.opacity(0.4))
-                base.foregroundStyle(Color.notchAccent)
+                base.foregroundStyle(accentColor.opacity(0.4))
+                base.foregroundStyle(accentColor)
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
                             Rectangle().frame(width: geo.size.width * CGFloat(progress))
