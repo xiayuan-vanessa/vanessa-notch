@@ -32,7 +32,7 @@ public struct NeteaseLyricsRepository: LyricsRepository {
             return .matched(songID: best.id, lyrics: cached)
         }
         let raw = try await source.fetchLyrics(songID: best.id)
-        let lyrics = LyricsParser.parse(lrc: raw.lrc, yrc: raw.yrc)
+        let lyrics = LyricsParser.parse(lrc: raw.lrc, yrc: raw.yrc, tlyric: raw.tlyric)
         cache.store(lyrics, forSongID: best.id)
         return .matched(songID: best.id, lyrics: lyrics)
     }

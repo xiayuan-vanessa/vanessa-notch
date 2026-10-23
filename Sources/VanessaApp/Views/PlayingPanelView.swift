@@ -26,20 +26,26 @@ struct PlayingPanelView: View {
     var width: CGFloat
     var height: CGFloat
     var accentColor: Color = .notchAccent
+    var showTranslation: Bool = true
 
     var body: some View {
         VStack(spacing: 3) {
             // 顶行:与菜单栏/刘海等高,封面与音频条分列刘海两侧(中间留出 185pt 刘海)。
             HStack(spacing: 0) {
-                cover
+                CoverView(data: display.artworkData).equatable()   // 仅封面数据变化时才重新解码
                 Spacer(minLength: 150)   // 中间空隙容纳物理刘海
                 DecorativeBars(isPlaying: display.isPlaying)
             }
             .frame(height: 30)
-            // 歌词:刘海正下方居中。
-            KaraokeLineView(text: display.lineText, words: display.words,
-                            position: display.position, fontSize: fontSize,
-                            accentColor: accentColor)
+            // 歌词:刘海正下方居中。换行时旧行上移淡出、新行自下淡入。
+            ZStack {
+                lyricBlock
+                    .id(display.position.lineIndex)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .offset(y: 6)),
+                        removal: .opacity.combined(with: .offset(y: -6))))
+            }
+            .animation(.easeOut(duration: 0.25), value: display.position.lineIndex)
             Spacer(minLength: 0)
         }
         .padding(.top, 2)
@@ -49,8 +55,28 @@ struct PlayingPanelView: View {
         .background(NotchIslandShape(radius: 18).fill(.black))
     }
 
-    @ViewBuilder private var cover: some View {
-        if let data = display.artworkData, let img = NSImage(data: data) {
+    /// 当前行原文(逐字高亮)+ 可选译文。
+    private var lyricBlock: some View {
+        VStack(spacing: 2) {
+            KaraokeLineView(text: display.lineText, words: display.words,
+                            position: display.position, fontSize: fontSize,
+                            accentColor: accentColor)
+            if showTranslation, let translation = display.translation {
+                Text(translation)
+                    .font(.system(size: max(fontSize - 2, 9)))
+                    .foregroundStyle(accentColor.opacity(0.6))
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+/// 封面缩略图。实现 Equatable 配合 .equatable(),避免 30fps 刷新时每帧重复解码图片。
+private struct CoverView: View, Equatable {
+    let data: Data?
+
+    var body: some View {
+        if let data, let img = NSImage(data: data) {
             Image(nsImage: img).resizable().frame(width: 24, height: 24)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         } else {

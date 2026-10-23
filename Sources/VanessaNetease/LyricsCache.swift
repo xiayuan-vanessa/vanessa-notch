@@ -7,13 +7,14 @@ public final class LyricsCache: @unchecked Sendable {
     private let queue = DispatchQueue(label: "vanessa.lyrics-cache")
     private var memory: [Int64: Lyrics] = [:]
 
-    /// - Parameter directory: 缓存目录;默认 Application Support/VanessaNotch/lyrics。
+    /// - Parameter directory: 缓存目录;默认 Application Support/VanessaNotch/lyrics-v2。
+    ///   (v2 起缓存包含译文;换目录让旧缓存失效,避免已缓存歌曲永远没有译文。)
     public init(directory: URL? = nil) {
         if let directory {
             self.directory = directory
         } else {
             let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            self.directory = base.appendingPathComponent("VanessaNotch/lyrics", isDirectory: true)
+            self.directory = base.appendingPathComponent("VanessaNotch/lyrics-v2", isDirectory: true)
         }
         try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
     }

@@ -9,6 +9,10 @@ public final class NotchWindowController {
     private let hosting: NSHostingView<AnyView>
     /// 当前内容期望尺寸(由调用方根据 idle/playing 设定)。
     public var contentSize: CGSize = CGSize(width: 230, height: 64) { didSet { reposition() } }
+    /// 水平微调(pt,正值向右),对应设置里的「水平微调」。
+    public var horizontalOffset: CGFloat = 0 {
+        didSet { if horizontalOffset != oldValue { reposition() } }
+    }
 
     /// - Parameter rootView: SwiftUI 根视图(随 AppState 变化)。
     public init(rootView: AnyView) {
@@ -39,7 +43,7 @@ public final class NotchWindowController {
         let notch = Self.notchSize(of: screen)
         let frame = NotchGeometry.panelFrame(screenFrame: screen.frame,
                                              notchSize: notch, panelSize: contentSize)
-        window.setFrame(frame, display: true)
+        window.setFrame(frame.offsetBy(dx: horizontalOffset, dy: 0), display: true)
     }
 
     /// 选定目标屏:优先带刘海的屏(safeAreaInsets.top > 0),否则用主屏。

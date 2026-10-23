@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import ServiceManagement
 import VanessaCore
 import VanessaNetease
 
@@ -40,7 +41,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                             })
         windowController = NotchWindowController(rootView: AnyView(root))
         windowController.contentSize = playingSize()   // 初始给播放尺寸(取自设置)
+        windowController.horizontalOffset = CGFloat(settings.offsetX)
         windowController.observeScreenChanges()
+        loadLaunchAtLoginState()
         windowController.show()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -62,9 +65,39 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] in
                 guard let self else { return }
                 self.appState.lyricLeadMs = self.settings.lyricOffsetMs   // 实时同步歌词偏移
+                self.windowController.horizontalOffset = CGFloat(self.settings.offsetX)
                 if self.lastKind == 2 { self.windowController.contentSize = self.playingSize() }
+                self.applyLaunchAtLoginIfNeeded()
             }
         appState.start()
+    }
+
+    /// 上次已应用到系统的开机启动状态,用于只在开关真正变化时调用 SMAppService。
+    private var appliedLaunchAtLogin = false
+
+    /// 启动时以系统实际登记状态回填开关(用户可能在「系统设置 → 登录项」里手动关过)。
+    private func loadLaunchAtLoginState() {
+        let status = SMAppService.mainApp.status
+        appliedLaunchAtLogin = (status == .enabled || status == .requiresApproval)
+        settings.launchAtLogin = appliedLaunchAtLogin
+    }
+
+    /// 开关变化时向系统登记/注销开机启动。
+    /// 失败(如用 swift run 运行、不在 .app 包内)时记录日志,并把开关回滚为实际状态。
+    private func applyLaunchAtLoginIfNeeded() {
+        let wanted = settings.launchAtLogin
+        guard wanted != appliedLaunchAtLogin else { return }
+        do {
+            if wanted {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            appliedLaunchAtLogin = wanted
+        } catch {
+            NSLog("[Vanessa-Notch] %@开机启动失败: %@", wanted ? "开启" : "关闭", String(describing: error))
+            settings.launchAtLogin = appliedLaunchAtLogin
+        }
     }
 
     /// 空闲胶囊尺寸。

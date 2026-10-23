@@ -72,4 +72,36 @@ final class LyricsParserTests: XCTestCase {
         XCTAssertEqual(r.lines.count, 1)
         XCTAssertEqual(r.lines[0].text, "好")
     }
+
+    func test_tlyric_attachesTranslationByTimestamp() {
+        let lrc = "[00:01.00]Hello\n[00:05.00]World\n"
+        let tlyric = "[00:01.00]你好\n[00:05.00]世界\n"
+        let r = LyricsParser.parse(lrc: lrc, yrc: nil, tlyric: tlyric)
+        XCTAssertEqual(r.lines.map { $0.translation }, ["你好", "世界"])
+    }
+
+    func test_tlyric_matchesYrcLineWithinTolerance() {
+        // yrc 行起点与译文时间戳差 300ms,仍应挂上
+        let yrc = "[1300,1000](1300,1000,0)Hi\n"
+        let tlyric = "[00:01.00]嗨\n"
+        let r = LyricsParser.parse(lrc: nil, yrc: yrc, tlyric: tlyric)
+        XCTAssertEqual(r.lines.first?.translation, "嗨")
+    }
+
+    func test_tlyric_beyondToleranceOrEmpty_isNil() {
+        let lrc = "[00:01.00]A\n[00:10.00]B\n[00:20.00]\n"
+        let tlyric = "[00:05.00]太远\n[00:10.00]\n[00:20.00]间奏\n"
+        let r = LyricsParser.parse(lrc: lrc, yrc: nil, tlyric: tlyric)
+        XCTAssertNil(r.lines[0].translation)   // 差 4s,超出容差
+        XCTAssertNil(r.lines[1].translation)   // 译文为空行
+        XCTAssertNil(r.lines[2].translation)   // 原文空行(间奏)不挂译文
+    }
+
+    func test_tlyric_appliesLrcOffset() {
+        let lrc = "[offset:500]\n[00:02.00]行\n"
+        let tlyric = "[00:02.00]译\n"
+        let r = LyricsParser.parse(lrc: lrc, yrc: nil, tlyric: tlyric)
+        XCTAssertEqual(r.lines.first?.startMs, 1500)
+        XCTAssertEqual(r.lines.first?.translation, "译")
+    }
 }

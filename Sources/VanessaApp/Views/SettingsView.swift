@@ -17,6 +17,7 @@ struct SettingsView: View {
             }
             Section("歌词") {
                 Slider(value: $settings.fontSize, in: 10...20, step: 1) { Text("字号") }
+                Toggle("显示译文", isOn: $settings.showTranslation)
                 Slider(value: $settings.offsetX, in: -200...200, step: 1) { Text("水平微调") }
                 Slider(value: $settings.lyricOffsetMs, in: -1000...1000, step: 10) {
                     Text("歌词偏移")

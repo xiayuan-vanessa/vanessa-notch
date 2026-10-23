@@ -11,6 +11,11 @@ public enum NeteaseAPIError: Error, Equatable {
 public struct RawLyrics: Equatable, Sendable {
     public let lrc: String?
     public let yrc: String?
+    /// 译文 LRC;无译文为 nil。
+    public let tlyric: String?
+    public init(lrc: String?, yrc: String?, tlyric: String? = nil) {
+        self.lrc = lrc; self.yrc = yrc; self.tlyric = tlyric
+    }
 }
 
 /// 数据源抽象:便于仓储注入假实现做单测。
@@ -44,15 +49,16 @@ public struct NeteaseAPIClient: NeteaseDataSource, Sendable {
         } catch { throw NeteaseAPIError.decoding }
     }
 
-    /// 拉取指定歌曲 ID 的 LRC + YRC 原始文本。
+    /// 拉取指定歌曲 ID 的 LRC + YRC + 译文原始文本。
     public func fetchLyrics(songID: Int64) async throws -> RawLyrics {
-        let url = URL(string: "\(baseURL)/song/lyric?id=\(songID)&lv=1&kv=1&yv=1")!
+        let url = URL(string: "\(baseURL)/song/lyric?id=\(songID)&lv=1&kv=1&yv=1&tv=1")!
         let data = try await get(url)
         do {
             let decoded = try JSONDecoder().decode(LyricResponse.self, from: data)
             let lrc = decoded.lrc?.lyric.flatMap { $0.isEmpty ? nil : $0 }
             let yrc = decoded.yrc?.lyric.flatMap { $0.isEmpty ? nil : $0 }
-            return RawLyrics(lrc: lrc, yrc: yrc)
+            let tlyric = decoded.tlyric?.lyric.flatMap { $0.isEmpty ? nil : $0 }
+            return RawLyrics(lrc: lrc, yrc: yrc, tlyric: tlyric)
         } catch { throw NeteaseAPIError.decoding }
     }
 
@@ -76,5 +82,6 @@ public struct NeteaseAPIClient: NeteaseDataSource, Sendable {
         struct Lyric: Decodable { let lyric: String? }
         let lrc: Lyric?
         let yrc: Lyric?
+        let tlyric: Lyric?
     }
 }

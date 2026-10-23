@@ -13,5 +13,7 @@ public final class Settings: ObservableObject {
     @AppStorage("panelHeight") public var panelHeight: Double = 80
     /// 歌词偏移(ms):正值=高亮提前。跟不上就调大。
     @AppStorage("lyricOffsetMs") public var lyricOffsetMs: Double = 250
+    /// 是否在原文下方显示译文(有译文时)。
+    @AppStorage("showTranslation") public var showTranslation: Bool = true
     public init() {}
 }

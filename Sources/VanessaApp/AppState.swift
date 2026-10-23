@@ -10,6 +10,8 @@ public struct PlayingDisplay: Equatable, Sendable {
     public var artworkData: Data?
     /// 当前行文本 / 「♪ 纯音乐」 / 「歌名 - 歌手」降级文案
     public var lineText: String
+    /// 当前行译文;无译文或处于降级文案时为 nil
+    public var translation: String?
     /// 逐字高亮数据(空数组表示整行高亮)
     public var words: [Word]
     public var position: LyricPosition
@@ -170,6 +172,7 @@ public final class AppState: ObservableObject {
 
         let lineText: String
         let words: [Word]
+        var translation: String?
 
         if let fb = fallbackText {
             // 降级文案：直接展示，不走歌词定位
@@ -179,6 +182,7 @@ public final class AppState: ObservableObject {
             // 正常歌词定位成功
             lineText = currentLyrics.lines[idx].text
             words = currentLyrics.lines[idx].words
+            translation = currentLyrics.lines[idx].translation
         } else {
             // 定位未命中（例如进度在第一行之前），展示第一行或降级
             lineText = currentLyrics.lines.first?.text ?? "\(state.title) - \(state.artist)"
@@ -188,16 +192,19 @@ public final class AppState: ObservableObject {
         let ar = accentRGB?.r ?? 229.0 / 255
         let ag = accentRGB?.g ?? 199.0 / 255
         let ab = accentRGB?.b ?? 192.0 / 255
-        ui = .playing(PlayingDisplay(
+        let next = AppUIState.playing(PlayingDisplay(
             title: state.title,
             artist: state.artist,
             artworkData: state.artworkData,
             lineText: lineText,
+            translation: translation,
             words: words,
             position: position,
             isPlaying: state.isPlaying,
             accentR: ar, accentG: ag, accentB: ab
         ))
+        // 内容未变(如暂停中)不重复发布,避免每秒 30 次无意义的视图刷新
+        if next != ui { ui = next }
     }
 
     /// 判断两次状态之间时序相关字段是否有变化。

@@ -16,8 +16,11 @@ public struct LyricLine: Equatable, Sendable, Codable {
     public var endMs: Int
     public var text: String
     public var words: [Word]
-    public init(startMs: Int, endMs: Int, text: String, words: [Word]) {
+    /// 译文;无译文时为 nil(旧缓存解码缺字段时同样为 nil)。
+    public var translation: String?
+    public init(startMs: Int, endMs: Int, text: String, words: [Word], translation: String? = nil) {
         self.startMs = startMs; self.endMs = endMs; self.text = text; self.words = words
+        self.translation = translation
     }
 }
 

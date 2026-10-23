@@ -31,6 +31,14 @@ final class NeteaseAPIClientTests: XCTestCase {
         XCTAssertEqual(raw.yrc, "[1000,500](1000,500,0)字")
     }
 
+    func test_fetchLyrics_decodesTlyric() async throws {
+        let json = #"{"lrc":{"lyric":"[00:01.00]Hi"},"tlyric":{"lyric":"[00:01.00]嗨"},"code":200}"#
+        StubURLProtocol.stubs = ["song/lyric": .init(data: Data(json.utf8), statusCode: 200, error: nil)]
+        let client = NeteaseAPIClient(session: StubURLProtocol.session())
+        let raw = try await client.fetchLyrics(songID: 111)
+        XCTAssertEqual(raw.tlyric, "[00:01.00]嗨")
+    }
+
     func test_fetchLyrics_missingYrc_isNil() async throws {
         let json = #"{"lrc":{"lyric":"[00:01.00]行"},"code":200}"#
         StubURLProtocol.stubs = ["song/lyric": .init(data: Data(json.utf8), statusCode: 200, error: nil)]

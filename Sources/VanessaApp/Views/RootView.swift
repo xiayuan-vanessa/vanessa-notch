@@ -28,7 +28,8 @@ struct RootView: View {
                                  fontSize: CGFloat(settings.fontSize),
                                  width: CGFloat(settings.panelWidth),
                                  height: CGFloat(settings.panelHeight),
-                                 accentColor: accent)
+                                 accentColor: accent,
+                                 showTranslation: settings.showTranslation)
                     .opacity(morphProgress)
             }
 

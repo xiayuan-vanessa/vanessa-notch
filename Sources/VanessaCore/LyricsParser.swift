@@ -3,16 +3,40 @@ import Foundation
 /// LRC + YRC 歌词解析器(纯函数,无副作用)。
 public enum LyricsParser {
     /// 解析入口:有 yrc 优先用逐字,否则用 lrc。offset 标签(若有)统一应用。
+    /// - Parameter tlyric: 译文 LRC(可选),按时间戳就近挂到对应行的 translation 上。
     /// - Returns: 统一歌词模型;无任何有效行时 lines 为空。
-    public static func parse(lrc: String?, yrc: String?) -> Lyrics {
+    public static func parse(lrc: String?, yrc: String?, tlyric: String? = nil) -> Lyrics {
         let offset = lrc.flatMap(parseOffset) ?? 0
+        let translations = tlyric.map { parseLRC($0).map { shift($0, by: offset) } } ?? []
         if let yrc, !yrc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let lines = parseYRC(yrc).map { shift($0, by: offset) }
-            if !lines.isEmpty { return finalize(lines) }
+            if !lines.isEmpty { return attachTranslations(translations, to: finalize(lines)) }
         }
         guard let lrc else { return Lyrics(lines: []) }
         let lines = parseLRC(lrc).map { shift($0, by: offset) }
-        return finalize(lines)
+        return attachTranslations(translations, to: finalize(lines))
+    }
+
+    /// 译文与原文行起点允许的最大时间差(毫秒)。yrc 行起点与 lrc/tlyric 时间戳常有几百毫秒偏差。
+    static let translationToleranceMs = 1000
+
+    /// 把译文行挂到原文行上:每个原文行取起点最接近且差值不超过容差的非空译文行。
+    /// - Parameters:
+    ///   - translations: 已按起点排序、已应用 offset 的译文行。
+    ///   - lyrics: finalize 后的原文歌词。
+    /// - Returns: 带 translation 的歌词;无译文时原样返回。
+    static func attachTranslations(_ translations: [LyricLine], to lyrics: Lyrics) -> Lyrics {
+        let candidates = translations.filter { !$0.text.isEmpty }
+        guard !candidates.isEmpty else { return lyrics }
+        var out = lyrics
+        for i in out.lines.indices where !out.lines[i].text.isEmpty {   // 空行(间奏)不挂译文
+            let start = out.lines[i].startMs
+            let nearest = candidates.min { abs($0.startMs - start) < abs($1.startMs - start) }
+            if let nearest, abs(nearest.startMs - start) <= translationToleranceMs {
+                out.lines[i].translation = nearest.text
+            }
+        }
+        return out
     }
 
     /// 从 [offset:xxx] 标签解析整体偏移毫秒(网易云约定:实际时间 = 标签时间 - offset)。
@@ -75,7 +99,8 @@ public enum LyricsParser {
         return LyricLine(startMs: line.startMs - offset,
                          endMs: line.endMs - offset,
                          text: line.text,
-                         words: line.words.map { Word(startMs: $0.startMs - offset, endMs: $0.endMs - offset, text: $0.text) })
+                         words: line.words.map { Word(startMs: $0.startMs - offset, endMs: $0.endMs - offset, text: $0.text) },
+                         translation: line.translation)
     }
 
     /// 收尾:按起点排序,推算每行 endMs(= 下一行起点;最后一行保留自身 endMs 或 +4s 兜底)。
