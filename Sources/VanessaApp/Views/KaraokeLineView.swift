@@ -28,16 +28,29 @@ struct KaraokeLineView: View {
         }
     }
 
+    /// 超长行先缩小字号(最小 60%)以完整显示,仍放不下才截断。
     private var base: some View {
-        Text(text).font(.system(size: fontSize, weight: .semibold)).lineLimit(1)
+        Text(text).font(.system(size: fontSize, weight: .semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
     }
 
-    /// 整行已唱比例 0...1。有逐字用「已完成字 + 当前字进度」,无逐字用 lineProgress。
+    /// 整行已唱比例 0...1。有逐字时按「已完成字宽 + 当前字宽 × 字内进度」/ 整行字宽计算,
+    /// 让遮罩边缘落在真实字位置上(中英文混排、长短词不等宽时也不会错位);无逐字用 lineProgress。
     private var progress: Double {
-        guard !words.isEmpty, let active = position.activeWordIndex else {
+        guard !words.isEmpty, let active = position.activeWordIndex, active < words.count else {
             return position.lineProgress
         }
-        let total = max(words.count, 1)
-        return (Double(active) + position.wordProgress) / Double(total)
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
+        let total = Self.width(of: words.map(\.text).joined(), font: font)
+        guard total > 0 else { return position.lineProgress }
+        let done = Self.width(of: words[..<active].map(\.text).joined(), font: font)
+        let current = Self.width(of: words[active].text, font: font) * position.wordProgress
+        return min((done + current) / total, 1)
+    }
+
+    /// 测量字符串在指定字体下的渲染宽度(pt)。缩放显示时比例不变,因此可直接用原字号测量。
+    private static func width(of string: String, font: NSFont) -> Double {
+        Double((string as NSString).size(withAttributes: [.font: font]).width)
     }
 }

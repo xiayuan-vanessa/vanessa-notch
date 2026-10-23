@@ -19,6 +19,11 @@ struct SettingsView: View {
                 Slider(value: $settings.fontSize, in: 10...20, step: 1) { Text("字号") }
                 Toggle("显示译文", isOn: $settings.showTranslation)
                 Slider(value: $settings.offsetX, in: -200...200, step: 1) { Text("水平微调") }
+                Slider(value: $settings.lyricTopOffset, in: 0...20, step: 1) {
+                    Text("顶部间距")
+                } minimumValueLabel: { Text("0") } maximumValueLabel: { Text("20") }
+                Text("顶部间距:\(Int(settings.lyricTopOffset)) pt(歌词顶着刘海就调大,面板会同步加高)")
+                    .font(.caption).foregroundStyle(.secondary)
                 Slider(value: $settings.lyricOffsetMs, in: -1000...1000, step: 10) {
                     Text("歌词偏移")
                 } minimumValueLabel: { Text("-1s") } maximumValueLabel: { Text("+1s") }
@@ -35,12 +40,23 @@ struct SettingsView: View {
                 } minimumValueLabel: { Text("56") } maximumValueLabel: { Text("160") }
                 Text("高度:\(Int(settings.panelHeight)) pt").font(.caption).foregroundStyle(.secondary)
             }
+            Section("显示") {
+                Picker("显示屏幕", selection: $settings.screenID) {
+                    Text("自动(优先刘海屏)").tag("")
+                    ForEach(NSScreen.screens, id: \.self) { screen in
+                        if let id = NotchWindowController.screenID(of: screen) {
+                            Text(screen.localizedName).tag(id)
+                        }
+                    }
+                }
+                Toggle("全屏应用时自动隐藏", isOn: $settings.hideInFullscreen)
+            }
             Section("通用") {
                 Toggle("开机启动", isOn: $settings.launchAtLogin)
                 Button("退出 Vanessa-Notch", role: .destructive, action: onQuit)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 340, height: 420)
+        .frame(width: 340, height: 520)
     }
 }

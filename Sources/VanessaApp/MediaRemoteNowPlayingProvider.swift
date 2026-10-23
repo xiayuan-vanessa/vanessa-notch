@@ -67,6 +67,21 @@ public final class MediaRemoteNowPlayingProvider: NowPlayingProvider, @unchecked
         continuation.finish()
     }
 
+    /// 向当前播放应用发送播放控制命令(经 adapter 的 send 子命令,一次性短进程)。
+    /// 资源缺失或进程启动失败时仅记录日志,不影响歌词流。
+    public func send(_ command: MediaCommand) {
+        guard FileManager.default.fileExists(atPath: scriptPath),
+              FileManager.default.fileExists(atPath: frameworkPath) else { return }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: perlPath)
+        proc.arguments = [scriptPath, frameworkPath, "send", String(command.rawValue)]
+        do {
+            try proc.run()
+        } catch {
+            NSLog("[Vanessa-Notch] 发送播放命令 %d 失败: %@", command.rawValue, String(describing: error))
+        }
+    }
+
     /// 累积字节,按换行切分;按 adapter 信封合并 full/diff 行,解码后推流。
     private func consume(_ data: Data) {
         guard !data.isEmpty else { return }

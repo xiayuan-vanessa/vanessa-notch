@@ -15,5 +15,16 @@ public final class Settings: ObservableObject {
     @AppStorage("lyricOffsetMs") public var lyricOffsetMs: Double = 250
     /// 是否在原文下方显示译文(有译文时)。
     @AppStorage("showTranslation") public var showTranslation: Bool = true
+    /// 显示屏 UUID;空字符串表示「自动」(优先刘海屏)。
+    @AppStorage("screenID") public var screenID: String = ""
+    /// 前台应用全屏时自动隐藏刘海面板。
+    @AppStorage("hideInFullscreen") public var hideInFullscreen: Bool = true
+    /// 歌词顶部额外间距(pt):在自动避让刘海的基础上再下移歌词,面板同步加高。
+    @AppStorage("lyricTopOffset") public var lyricTopOffset: Double = 0
     public init() {}
+
+    /// 播放面板实际高度 = 设置的面板高度(下限 56)+ 歌词顶部额外间距。
+    public var totalPanelHeight: Double {
+        max(56, panelHeight) + lyricTopOffset
+    }
 }

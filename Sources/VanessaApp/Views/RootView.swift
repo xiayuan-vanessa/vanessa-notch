@@ -6,19 +6,33 @@ import VanessaCore
 struct RootView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var settings: Settings
+    /// 目标屏刘海尺寸(随分辨率变化)。
+    @ObservedObject var metrics: NotchMetrics
     var onOpenSettings: () -> Void
     var onQuit: () -> Void
     /// 播放 → 空闲收缩动画完成后的窗口缩小回调。
     var onShrinkComplete: (() -> Void)?
+    /// 控制区按钮发出的播放命令。
+    var onCommand: (MediaCommand) -> Void = { _ in }
+    /// 控制区展开/收起时通知窗口调整尺寸:展开前立即调用;收起动画结束后调用。
+    var onExpandChange: (Bool) -> Void = { _ in }
+    /// 打开「校正歌词」窗口。
+    var onCorrectLyrics: () -> Void = {}
 
     @State private var morphProgress: Double = 0
     /// 动画收缩期间保留的播放快照(避免 .idle 后内容立即消失)。
     @State private var displaySnapshot: PlayingDisplay?
+    /// 播放控制区是否展开。
+    @State private var expanded = false
+    /// 悬停延迟展开任务;移出时取消。
+    @State private var hoverTask: Task<Void, Never>?
 
     var body: some View {
         ZStack(alignment: .top) {
+            // 黑色底形限高到面板高度:控制区收起动画期间窗口尚未缩小,底形需随面板一起收缩。
             MorphingNotchShape(progress: morphProgress)
                 .fill(.black)
+                .frame(maxHeight: panelHeight)
 
             if let display = currentDisplay, morphProgress > 0 {
                 let accent = Color(red: display.accentR,
@@ -27,9 +41,13 @@ struct RootView: View {
                 PlayingPanelView(display: display,
                                  fontSize: CGFloat(settings.fontSize),
                                  width: CGFloat(settings.panelWidth),
-                                 height: CGFloat(settings.panelHeight),
+                                 height: CGFloat(settings.totalPanelHeight),
                                  accentColor: accent,
-                                 showTranslation: settings.showTranslation)
+                                 showTranslation: settings.showTranslation,
+                                 notchHeight: metrics.notchHeight,
+                                 lyricTopOffset: CGFloat(settings.lyricTopOffset),
+                                 expanded: expanded,
+                                 onCommand: onCommand)
                     .opacity(morphProgress)
             }
 
@@ -37,8 +55,13 @@ struct RootView: View {
                 idleContent.opacity(1 - morphProgress)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .contentShape(MorphingNotchShape(progress: morphProgress))
+        .onHover { handleHover($0) }
         .contextMenu {
+            if stateKind == 2 {
+                Button("歌词不对？校正…") { onCorrectLyrics() }
+            }
             Button("偏好设置") { onOpenSettings() }
             Button("退出") { onQuit() }
         }
@@ -48,6 +71,11 @@ struct RootView: View {
                     morphProgress = 1
                 }
             } else {
+                hoverTask?.cancel()
+                if expanded {
+                    expanded = false
+                    onExpandChange(false)
+                }
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
                     morphProgress = 0
                 }
@@ -62,6 +90,40 @@ struct RootView: View {
         }
         .onAppear {
             if stateKind == 2 { morphProgress = 1 }
+        }
+    }
+
+    /// 面板当前高度(含展开的控制区)。
+    private var panelHeight: CGFloat {
+        CGFloat(settings.totalPanelHeight) + (expanded ? PlaybackControlsView.height : 0)
+    }
+
+    /// 悬停 0.3s 后展开控制区(避免鼠标路过时误触发);移出立即收起。仅播放态生效。
+    private func handleHover(_ inside: Bool) {
+        hoverTask?.cancel()
+        guard inside else {
+            setExpanded(false)
+            return
+        }
+        guard stateKind == 2 else { return }
+        hoverTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled, stateKind == 2 else { return }
+            setExpanded(true)
+        }
+    }
+
+    /// 切换展开状态:展开时先扩大窗口再做动画;收起时先做动画,结束后再缩小窗口。
+    private func setExpanded(_ value: Bool) {
+        guard value != expanded else { return }
+        if value { onExpandChange(true) }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            expanded = value
+        }
+        if !value {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if !expanded { onExpandChange(false) }   // 动画期间又展开了则不缩窗口
+            }
         }
     }
 

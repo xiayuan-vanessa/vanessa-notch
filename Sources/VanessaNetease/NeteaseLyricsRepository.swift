@@ -10,6 +10,10 @@ public enum LyricsLookupResult: Equatable, Sendable {
 /// 仓储抽象,供 AppState 注入假实现测试。
 public protocol LyricsRepository: Sendable {
     func lookup(title: String, artist: String, durationMs: Int) async throws -> LyricsLookupResult
+    /// 按关键词搜索候选歌曲(供手动校正选歌)。
+    func search(keywords: String) async throws -> [SongCandidate]
+    /// 按歌曲 ID 取歌词(先缓存后网络),用于手动指定的歌曲。
+    func lyrics(forSongID id: Int64) async throws -> Lyrics
 }
 
 /// 编排:搜索 → SongMatcher 选歌 → 拉歌词 → 解析 → 缓存。
@@ -28,12 +32,20 @@ public struct NeteaseLyricsRepository: LyricsRepository {
         guard let best = SongMatcher.bestMatch(for: query, in: candidates) else {
             return .lowConfidence
         }
-        if let cached = cache.lyrics(forSongID: best.id) {
-            return .matched(songID: best.id, lyrics: cached)
+        return .matched(songID: best.id, lyrics: try await lyrics(forSongID: best.id))
+    }
+
+    public func search(keywords: String) async throws -> [SongCandidate] {
+        try await source.search(title: keywords, artist: "")
+    }
+
+    public func lyrics(forSongID id: Int64) async throws -> Lyrics {
+        if let cached = cache.lyrics(forSongID: id) {
+            return cached
         }
-        let raw = try await source.fetchLyrics(songID: best.id)
+        let raw = try await source.fetchLyrics(songID: id)
         let lyrics = LyricsParser.parse(lrc: raw.lrc, yrc: raw.yrc, tlyric: raw.tlyric)
-        cache.store(lyrics, forSongID: best.id)
-        return .matched(songID: best.id, lyrics: lyrics)
+        cache.store(lyrics, forSongID: id)
+        return lyrics
     }
 }

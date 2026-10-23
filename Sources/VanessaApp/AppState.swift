@@ -16,6 +16,10 @@ public struct PlayingDisplay: Equatable, Sendable {
     public var words: [Word]
     public var position: LyricPosition
     public var isPlaying: Bool
+    /// 当前播放进度(秒,不含歌词提前量),供控制面板进度条显示。
+    public var elapsed: Double = 0
+    /// 歌曲总时长(秒);未知时为 0。
+    public var duration: Double = 0
     /// 封面主色调 RGB(0...1)，用于歌词文字着色。
     public var accentR: Double
     public var accentG: Double
@@ -40,6 +44,9 @@ public final class AppState: ObservableObject {
 
     private let provider: NowPlayingProvider
     private let repository: LyricsRepository
+    private let preferences: SongPreferences
+    /// 当前歌曲的单曲偏移(毫秒),叠加在 lyricLeadMs 上。
+    private var songOffsetMs: Double = 0
 
     /// 当前歌曲的唯一标识，用于判断是否换歌。
     /// 当前封面主色调 RGB；nil 时使用默认色。
@@ -59,9 +66,11 @@ public final class AppState: ObservableObject {
     /// 30fps 刷新定时器。
     private var ticker: Timer?
 
-    public init(provider: NowPlayingProvider, repository: LyricsRepository) {
+    public init(provider: NowPlayingProvider, repository: LyricsRepository,
+                preferences: SongPreferences = SongPreferences()) {
         self.provider = provider
         self.repository = repository
+        self.preferences = preferences
     }
 
     /// 启动订阅流并开启 30fps 刷新定时器。
@@ -110,6 +119,7 @@ public final class AppState: ObservableObject {
         // 换歌时触发歌词拉取；duration=0 时匹配可能失败，不锁定 identity 让后续重试
         if state.songIdentity != currentIdentity {
             currentIdentity = state.songIdentity
+            songOffsetMs = preferences.offsetMs(for: state.songIdentity)
             await loadLyrics(for: state)
             if fallbackText != nil && state.duration <= 0 {
                 currentIdentity = nil
@@ -133,6 +143,11 @@ public final class AppState: ObservableObject {
             accentRGB = nil
         }
         do {
+            // 用户手动指定过歌曲:跳过自动匹配,直接按 ID 取歌词
+            if let manualID = preferences.songID(for: state.songIdentity) {
+                show(try await repository.lyrics(forSongID: manualID))
+                return
+            }
             let result = try await repository.lookup(
                 title: state.title,
                 artist: state.artist,
@@ -140,9 +155,7 @@ public final class AppState: ObservableObject {
             )
             switch result {
             case .matched(_, let lyrics):
-                currentLyrics = lyrics
-                // 空歌词（纯音乐）展示占位符
-                fallbackText = lyrics.isEmpty ? "♪ 纯音乐" : nil
+                show(lyrics)
             case .lowConfidence:
                 currentLyrics = Lyrics(lines: [])
                 fallbackText = "\(state.title) - \(state.artist)"
@@ -152,6 +165,45 @@ public final class AppState: ObservableObject {
             currentLyrics = Lyrics(lines: [])
             fallbackText = "\(state.title) - \(state.artist)"
         }
+    }
+
+    /// 展示匹配到的歌词;空歌词(纯音乐)展示占位符。
+    private func show(_ lyrics: Lyrics) {
+        currentLyrics = lyrics
+        fallbackText = lyrics.isEmpty ? "♪ 纯音乐" : nil
+    }
+
+    // MARK: - 手动校正
+
+    /// 当前歌曲信息(供校正窗口预填);未在播放时为 nil。
+    public var currentSong: (identity: String, title: String, artist: String)? {
+        latestState.map { ($0.songIdentity, $0.title, $0.artist) }
+    }
+
+    /// 按关键词搜索候选歌曲。
+    public func searchCandidates(_ keywords: String) async throws -> [SongCandidate] {
+        try await repository.search(keywords: keywords)
+    }
+
+    /// 手动指定某首歌对应的网易云歌曲:拉取歌词并记住选择;若该歌仍在播放则立即替换显示。
+    /// - Throws: 拉取歌词失败时抛出,此时不记录选择。
+    public func applyManualMatch(songID: Int64, for identity: String) async throws {
+        let lyrics = try await repository.lyrics(forSongID: songID)
+        preferences.setSongID(songID, for: identity)
+        guard latestState?.songIdentity == identity else { return }   // 期间已切歌
+        show(lyrics)
+        refresh()
+    }
+
+    /// 读取某首歌的单曲偏移(毫秒)。
+    public func songOffset(for identity: String) -> Double {
+        preferences.offsetMs(for: identity)
+    }
+
+    /// 设置某首歌的单曲偏移;若该歌正在播放则立即生效。
+    public func setSongOffset(_ ms: Double, for identity: String) {
+        preferences.setOffsetMs(ms, for: identity)
+        if latestState?.songIdentity == identity { songOffsetMs = ms }
     }
 
     /// 启动 30fps 定时刷新，挂在 RunLoop.main 上以兼容非 UI 场景。
@@ -167,7 +219,8 @@ public final class AppState: ObservableObject {
     func refresh() {
         guard let state = latestState, let clock else { return }
         // 提前 lyricLeadMs 补偿采样/渲染管道与感知延迟,让逐字高亮卡在字头而非滞后(可在设置调节)。
-        let posMs = clock.positionMs(at: Date()) + lyricLeadMs
+        let rawMs = clock.positionMs(at: Date())
+        let posMs = rawMs + lyricLeadMs + songOffsetMs
         let position = LyricSyncEngine.locate(positionMs: posMs, in: currentLyrics)
 
         let lineText: String
@@ -201,6 +254,8 @@ public final class AppState: ObservableObject {
             words: words,
             position: position,
             isPlaying: state.isPlaying,
+            elapsed: max(rawMs / 1000, 0),
+            duration: state.duration,
             accentR: ar, accentG: ag, accentB: ab
         ))
         // 内容未变(如暂停中)不重复发布,避免每秒 30 次无意义的视图刷新

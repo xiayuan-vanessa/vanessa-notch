@@ -27,6 +27,13 @@ struct PlayingPanelView: View {
     var height: CGFloat
     var accentColor: Color = .notchAccent
     var showTranslation: Bool = true
+    /// 物理刘海高度(pt);无刘海为 0。顶行至少与刘海等高,保证歌词从刘海下沿以下开始。
+    var notchHeight: CGFloat = 0
+    /// 歌词顶部额外间距(pt,来自设置);只下移歌词,封面与均衡器位置不变。
+    var lyricTopOffset: CGFloat = 0
+    /// 是否展开播放控制区(悬停触发)。
+    var expanded: Bool = false
+    var onCommand: (MediaCommand) -> Void = { _ in }
 
     var body: some View {
         VStack(spacing: 3) {
@@ -34,9 +41,9 @@ struct PlayingPanelView: View {
             HStack(spacing: 0) {
                 CoverView(data: display.artworkData).equatable()   // 仅封面数据变化时才重新解码
                 Spacer(minLength: 150)   // 中间空隙容纳物理刘海
-                DecorativeBars(isPlaying: display.isPlaying)
+                DecorativeBars(isPlaying: display.isPlaying, color: accentColor)
             }
-            .frame(height: 30)
+            .frame(height: headerHeight)
             // 歌词:刘海正下方居中。换行时旧行上移淡出、新行自下淡入。
             ZStack {
                 lyricBlock
@@ -46,13 +53,24 @@ struct PlayingPanelView: View {
                         removal: .opacity.combined(with: .offset(y: -6))))
             }
             .animation(.easeOut(duration: 0.25), value: display.position.lineIndex)
+            .padding(.top, lyricTopOffset)
             Spacer(minLength: 0)
+            if expanded {
+                PlaybackControlsView(display: display, accentColor: accentColor, onCommand: onCommand)
+                    .transition(.opacity)
+            }
         }
         .padding(.top, 2)
         .padding(.horizontal, 12)
         .padding(.bottom, 9)
-        .frame(width: width, height: height, alignment: .top)
+        .frame(width: width, height: height + (expanded ? PlaybackControlsView.height : 0), alignment: .top)
         .background(NotchIslandShape(radius: 18).fill(.black))
+    }
+
+    /// 顶行高度:默认 30pt;刘海更高时(如缩放为「更多空间」分辨率)加高到刘海下沿,
+    /// 避免歌词顶进刘海。2 为面板顶部内边距。
+    private var headerHeight: CGFloat {
+        max(30, notchHeight - 2)
     }
 
     /// 当前行原文(逐字高亮)+ 可选译文。

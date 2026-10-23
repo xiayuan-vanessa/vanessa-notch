@@ -9,6 +9,13 @@ public protocol NowPlayingProvider: AnyObject {
     func stop()
 }
 
+/// 播放控制命令,取值为 MediaRemote 的 MRCommand ID。
+public enum MediaCommand: Int, Sendable {
+    case togglePlayPause = 2
+    case nextTrack = 4
+    case previousTrack = 5
+}
+
 /// 把 adapter 的一行 JSON 解码成 NowPlayingState（纯函数）。
 /// 接受所有播放源，不做 bundleID 过滤。
 public enum AdapterEventDecoder {

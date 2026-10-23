@@ -16,7 +16,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellable: AnyCancellable?
     private var settingsCancellable: AnyCancellable?
     private var settingsWindow: NSWindow?
+    private var correctionWindow: NSWindow?
+    private var provider: MediaRemoteNowPlayingProvider!
     private var adapterAvailable = true
+    /// 播放控制区是否展开(展开时窗口加高)。
+    private var isExpanded = false
 
     /// 内嵌资源路径:bundle 内 Resources 下的 adapter 脚本与 framework。
     private func adapterPaths() -> (script: String, framework: String) {
@@ -26,24 +30,30 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         let paths = adapterPaths()
-        let provider = MediaRemoteNowPlayingProvider(scriptPath: paths.script, frameworkPath: paths.framework)
+        provider = MediaRemoteNowPlayingProvider(scriptPath: paths.script, frameworkPath: paths.framework)
         let cache = LyricsCache()
         let repository = NeteaseLyricsRepository(source: NeteaseAPIClient(), cache: cache)
         appState = AppState(provider: provider, repository: repository)
         appState.lyricLeadMs = settings.lyricOffsetMs   // 初始歌词偏移
 
         // 常驻根视图:用 MorphingNotchShape 变形;收缩动画结束后回调缩小窗口。
-        let root = RootView(appState: appState, settings: settings,
+        let metrics = NotchMetrics()
+        let root = RootView(appState: appState, settings: settings, metrics: metrics,
                             onOpenSettings: { [weak self] in self?.openSettings() },
                             onQuit: { NSApp.terminate(nil) },
                             onShrinkComplete: { [weak self] in
                                 self?.windowController.contentSize = Self.idleSize
-                            })
-        windowController = NotchWindowController(rootView: AnyView(root))
+                            },
+                            onCommand: { [weak self] in self?.provider.send($0) },
+                            onExpandChange: { [weak self] in self?.setExpanded($0) },
+                            onCorrectLyrics: { [weak self] in self?.openLyricsCorrection() })
+        windowController = NotchWindowController(rootView: AnyView(root), metrics: metrics)
         windowController.contentSize = playingSize()   // 初始给播放尺寸(取自设置)
         windowController.horizontalOffset = CGFloat(settings.offsetX)
+        windowController.preferredScreenID = settings.screenID.isEmpty ? nil : settings.screenID
         windowController.observeScreenChanges()
         loadLaunchAtLoginState()
+        observeFullscreen()
         windowController.show()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -66,10 +76,39 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.appState.lyricLeadMs = self.settings.lyricOffsetMs   // 实时同步歌词偏移
                 self.windowController.horizontalOffset = CGFloat(self.settings.offsetX)
+                self.windowController.preferredScreenID = self.settings.screenID.isEmpty ? nil : self.settings.screenID
                 if self.lastKind == 2 { self.windowController.contentSize = self.playingSize() }
                 self.applyLaunchAtLoginIfNeeded()
+                self.updateFullscreenVisibility()
             }
         appState.start()
+    }
+
+    /// 当前是否因全屏而隐藏了刘海面板。
+    private var hiddenForFullscreen = false
+
+    /// 监听空间切换与前台应用切换,刷新全屏隐藏状态。
+    /// 进入/退出全屏有约 0.7s 的过渡动画,事件到达时窗口可能尚未就位,因此延迟再检查一次。
+    private func observeFullscreen() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in
+                    self?.updateFullscreenVisibility()
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    self?.updateFullscreenVisibility()
+                }
+            }
+        }
+    }
+
+    /// 按「设置开关 + 目标屏是否全屏」显示或隐藏刘海面板。
+    private func updateFullscreenVisibility() {
+        let isFullscreen = windowController.currentScreen.map(FullscreenDetector.isFullscreen(on:)) ?? false
+        let shouldHide = settings.hideInFullscreen && isFullscreen
+        guard shouldHide != hiddenForFullscreen else { return }
+        hiddenForFullscreen = shouldHide
+        if shouldHide { windowController.hide() } else { windowController.show() }
     }
 
     /// 上次已应用到系统的开机启动状态,用于只在开关真正变化时调用 SMAppService。
@@ -102,9 +141,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 空闲胶囊尺寸。
     private static let idleSize = CGSize(width: 140, height: 40)
-    /// 播放岛尺寸:取自用户设置(下限做保护以避开物理刘海/过矮)。
+    /// 播放岛尺寸:取自用户设置(下限做保护以避开物理刘海/过矮);控制区展开时加上控制区高度。
     private func playingSize() -> CGSize {
-        CGSize(width: max(240, settings.panelWidth), height: max(56, settings.panelHeight))
+        let extra = isExpanded ? PlaybackControlsView.height : 0
+        return CGSize(width: max(240, settings.panelWidth), height: settings.totalPanelHeight + extra)
+    }
+
+    /// 控制区展开/收起:记录状态,正在播放时同步窗口尺寸。
+    private func setExpanded(_ expanded: Bool) {
+        isExpanded = expanded
+        if lastKind == 2 { windowController.contentSize = playingSize() }
     }
     /// 上一次的状态种类(0 空闲 / 1 警告 / 2 播放),用于避免重复设尺寸。
     private var lastKind = -1
@@ -150,6 +196,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 状态栏右键菜单:与刘海面板右键菜单一致(偏好设置 / 退出)。
     private func makeStatusMenu() -> NSMenu {
         let menu = NSMenu()
+        if appState.currentSong != nil {
+            let correct = NSMenuItem(title: "歌词不对？校正…", action: #selector(openLyricsCorrection), keyEquivalent: "")
+            correct.target = self
+            menu.addItem(correct)
+        }
         let prefs = NSMenuItem(title: "偏好设置", action: #selector(openSettings), keyEquivalent: ",")
         prefs.target = self
         menu.addItem(prefs)
@@ -179,5 +230,27 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// 打开「校正歌词」窗口。每次打开都按当前歌曲重建内容;窗口内的操作绑定打开时的那首歌,
+    /// 中途切歌也不会把偏移/选歌错记到下一首上。未在播放时不打开。
+    @objc private func openLyricsCorrection() {
+        guard let song = appState.currentSong else { return }
+        let identity = song.identity
+        let view = LyricsCorrectionView(
+            title: song.title, artist: song.artist,
+            offsetMs: appState.songOffset(for: identity),
+            onOffsetChange: { [weak self] in self?.appState.setSongOffset($0, for: identity) },
+            onSearch: { [weak self] in try await self?.appState.searchCandidates($0) ?? [] },
+            onSelect: { [weak self] in try await self?.appState.applyManualMatch(songID: $0, for: identity) })
+        let win = correctionWindow ?? NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 500),
+                                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        win.title = "校正歌词"
+        win.contentView = NSHostingView(rootView: view)
+        win.isReleasedWhenClosed = false
+        if correctionWindow == nil { win.center() }
+        correctionWindow = win
+        NSApp.activate(ignoringOtherApps: true)
+        win.makeKeyAndOrderFront(nil)
     }
 }
