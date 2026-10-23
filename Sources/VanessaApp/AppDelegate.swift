@@ -139,6 +139,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 退出时停止歌词流并结束 adapter 子进程,避免 perl 进程在 App 退出后残留。
+    public func applicationWillTerminate(_ notification: Notification) {
+        appState?.stop()
+    }
+
     /// 空闲胶囊尺寸。
     private static let idleSize = CGSize(width: 140, height: 40)
     /// 播放岛尺寸:取自用户设置(下限做保护以避开物理刘海/过矮);控制区展开时加上控制区高度。
