@@ -22,6 +22,24 @@ final class AdapterEventDecoderTests: XCTestCase {
         XCTAssertEqual(s.sampledAt.timeIntervalSince1970, now.timeIntervalSince1970, accuracy: 0.001)
     }
 
+    /// --micros 输出:进度/时长取微秒字段,采样时刻取 timestampEpochMicros(进度对应的真实时刻),
+    /// 而不是收到该行的时刻;否则 App 中途启动时会把很久以前的进度当成「现在」,整体落后。
+    func test_microsFormat_usesTimestampEpochAsSampledAt() throws {
+        let line = #"{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.netease.163music","playing":true,"title":"a","artist":"b","durationMicros":281588406,"elapsedTimeMicros":72069773,"timestampEpochMicros":4910500000,"playbackRate":1}}"#
+        let s = try XCTUnwrap(AdapterEventDecoder.decode(line: line, sampledAt: now))
+        XCTAssertEqual(s.elapsed, 72.069773, accuracy: 0.000001)
+        XCTAssertEqual(s.duration, 281.588406, accuracy: 0.000001)
+        XCTAssertEqual(s.sampledAt.timeIntervalSince1970, 4910.5, accuracy: 0.000001)
+    }
+
+    /// 有微秒进度但缺少时间戳时,退回使用收到该行的时刻。
+    func test_microsWithoutTimestamp_fallsBackToSampledAt() throws {
+        let line = #"{"bundleIdentifier":"com.netease.163music","playing":true,"title":"a","artist":"b","durationMicros":300000000,"elapsedTimeMicros":1500000}"#
+        let s = try XCTUnwrap(AdapterEventDecoder.decode(line: line, sampledAt: now))
+        XCTAssertEqual(s.elapsed, 1.5, accuracy: 0.000001)
+        XCTAssertEqual(s.sampledAt.timeIntervalSince1970, now.timeIntervalSince1970, accuracy: 0.001)
+    }
+
     /// 非 data 类型信封应忽略。
     func test_nonDataEnvelope_returnsNil() {
         XCTAssertNil(AdapterEventDecoder.decode(line: #"{"type":"ping"}"#, sampledAt: now))

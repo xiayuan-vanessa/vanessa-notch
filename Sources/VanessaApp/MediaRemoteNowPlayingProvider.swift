@@ -40,7 +40,8 @@ public final class MediaRemoteNowPlayingProvider: NowPlayingProvider, @unchecked
         }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: perlPath)
-        proc.arguments = [scriptPath, frameworkPath, "stream"]
+        // --micros:输出微秒精度的进度与进度对应时刻(timestampEpochMicros),用于准确推算当前进度
+        proc.arguments = [scriptPath, frameworkPath, "stream", "--micros"]
         let pipe = Pipe()
         proc.standardOutput = pipe
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in

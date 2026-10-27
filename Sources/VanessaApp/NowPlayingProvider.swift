@@ -35,6 +35,10 @@ public enum AdapterEventDecoder {
     }
 
     /// 从一份 payload 字典解码。
+    /// 兼容 adapter 的 `--micros` 输出:进度 / 时长优先取微秒字段;`timestampEpochMicros`
+    /// 是该进度对应的真实时刻,存在时作为采样时刻(播放器可能很久没上报,收到时刻并非进度时刻),
+    /// 缺失时才退回 sampledAt。
+    /// - Parameter sampledAt: 收到该行的时刻,仅在 payload 无微秒时间戳时使用。
     public static func decode(payload: [String: Any], sampledAt: Date) -> NowPlayingState? {
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let event = try? JSONDecoder().decode(AdapterEvent.self, from: data) else { return nil }
@@ -44,9 +48,9 @@ public enum AdapterEventDecoder {
             artist: event.artist ?? "",
             album: event.album ?? "",
             artworkData: event.artworkData.flatMap { Data(base64Encoded: $0) },
-            duration: event.duration ?? 0,
-            elapsed: event.elapsedTime ?? 0,
-            sampledAt: sampledAt,
+            duration: event.durationMicros.map { $0 / 1_000_000 } ?? event.duration ?? 0,
+            elapsed: event.elapsedTimeMicros.map { $0 / 1_000_000 } ?? event.elapsedTime ?? 0,
+            sampledAt: event.timestampEpochMicros.map { Date(timeIntervalSince1970: $0 / 1_000_000) } ?? sampledAt,
             rate: event.playbackRate ?? 1,
             isPlaying: event.playing ?? false,
             sourceBundleID: event.bundleIdentifier!
@@ -66,5 +70,9 @@ public enum AdapterEventDecoder {
         let playbackRate: Double?
         let artworkData: String?
         let timestamp: String?
+        /// 以下为 `--micros` 模式下的微秒字段。
+        let durationMicros: Double?
+        let elapsedTimeMicros: Double?
+        let timestampEpochMicros: Double?
     }
 }
