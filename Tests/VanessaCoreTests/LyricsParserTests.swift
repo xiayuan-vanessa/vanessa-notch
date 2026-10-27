@@ -104,4 +104,31 @@ final class LyricsParserTests: XCTestCase {
         XCTAssertEqual(r.lines.first?.startMs, 1500)
         XCTAssertEqual(r.lines.first?.translation, "译")
     }
+
+    // MARK: - 制作信息过滤
+
+    func test_lrc_filtersCreditLines() {
+        let lrc = "[00:00.00] 作词 : 方文山\n[00:00.50]作曲：周杰伦\n[00:01.00]Producer: Someone\n[00:02.00]故事的小黄花\n"
+        let r = LyricsParser.parse(lrc: lrc, yrc: nil)
+        XCTAssertEqual(r.lines.map(\.text), ["故事的小黄花"])
+    }
+
+    func test_yrc_filtersCreditLines() {
+        let yrc = "[0,500](0,500,0)作词: 某人\n[1000,500](1000,500,0)正文\n"
+        let r = LyricsParser.parse(lrc: nil, yrc: yrc)
+        XCTAssertEqual(r.lines.map(\.text), ["正文"])
+    }
+
+    func test_creditFilter_keepsNormalLinesContainingKeywords() {
+        // 关键词不在行首、或没有冒号的正文行不应被过滤
+        let lrc = "[00:01.00]为你写的词\n[00:02.00]这首曲子很好听\n[00:03.00]Lyrics of my heart\n"
+        let r = LyricsParser.parse(lrc: lrc, yrc: nil)
+        XCTAssertEqual(r.lines.count, 3)
+    }
+
+    func test_onlyCreditLines_resultsInEmptyLyrics() {
+        // 纯音乐常只有制作信息行,过滤后为空,上层会显示「♪ 纯音乐」
+        let lrc = "[00:00.00]作曲 : 某人\n[00:01.00]编曲 : 某人\n"
+        XCTAssertTrue(LyricsParser.parse(lrc: lrc, yrc: nil).isEmpty)
+    }
 }

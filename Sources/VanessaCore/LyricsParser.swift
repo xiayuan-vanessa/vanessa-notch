@@ -9,12 +9,27 @@ public enum LyricsParser {
         let offset = lrc.flatMap(parseOffset) ?? 0
         let translations = tlyric.map { parseLRC($0).map { shift($0, by: offset) } } ?? []
         if let yrc, !yrc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let lines = parseYRC(yrc).map { shift($0, by: offset) }
-            if !lines.isEmpty { return attachTranslations(translations, to: finalize(lines)) }
+            let parsed = parseYRC(yrc)
+            // 先判空再过滤:yrc 只有制作信息行时说明是纯音乐,不应回退到 lrc 再显示一遍制作信息
+            if !parsed.isEmpty {
+                let lines = parsed.filter { !isCreditLine($0.text) }.map { shift($0, by: offset) }
+                return attachTranslations(translations, to: finalize(lines))
+            }
         }
         guard let lrc else { return Lyrics(lines: []) }
-        let lines = parseLRC(lrc).map { shift($0, by: offset) }
+        let lines = parseLRC(lrc).filter { !isCreditLine($0.text) }.map { shift($0, by: offset) }
         return attachTranslations(translations, to: finalize(lines))
+    }
+
+    /// 制作信息行的识别规则:行首为「作词 / 作曲 / 编曲…」等关键词,后接冒号。
+    /// 只匹配行首,避免误伤正文中偶然出现的同名词语。
+    static let creditPattern = #"^\s*(作词|作曲|编曲|词|曲|演唱|原唱|制作人|制作|监制|出品|发行|混音|录音|母带|和声|配唱|吉他|贝斯|鼓|键盘|弦乐|翻译|OP|SP|Lyricist|Lyrics|Composer|Arranger|Producer)\s*[:：∶]"#
+
+    /// 判断一行歌词是否为制作信息(作词、作曲等),这类行不作为歌词显示。
+    /// - Parameter text: 已去除时间戳的行文本。
+    /// - Returns: 命中 `creditPattern`(忽略大小写)时为 true。
+    static func isCreditLine(_ text: String) -> Bool {
+        text.range(of: creditPattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     /// 译文与原文行起点允许的最大时间差(毫秒)。yrc 行起点与 lrc/tlyric 时间戳常有几百毫秒偏差。
