@@ -20,11 +20,29 @@ struct KaraokeLineView: View {
                 base.foregroundStyle(accentColor)
                     .mask(alignment: .leading) {
                         GeometryReader { geo in
-                            Rectangle().frame(width: geo.size.width * CGFloat(progress))
+                            highlightMask(width: geo.size.width)
                         }
                     }
+                    .shadow(color: accentColor.opacity(0.5), radius: 3)   // 已唱部分轻微发光
             }
             // 不加显式动画:遮罩直接按 30fps 实时进度推进,避免滞后于歌词。
+        }
+    }
+
+    /// 已唱/未唱交界处羽化过渡带的宽度(pt)。
+    private static let featherWidth: CGFloat = 8
+
+    /// 高亮遮罩:实心矩形 + 右侧由实到透明的渐变羽化带,让交界处柔和过渡而非硬切。
+    /// 遮罩前沿按 progress 在 [0, width + feather] 区间推进:progress=0 时完全不亮,
+    /// progress=1 时实心部分恰好覆盖整行;羽化带中点与原硬边位置的偏差不超过 feather/2。
+    /// - Parameter width: 歌词文本的实际渲染宽度(pt)
+    private func highlightMask(width: CGFloat) -> some View {
+        let feather = Self.featherWidth
+        let front = (width + feather) * CGFloat(progress)
+        return HStack(spacing: 0) {
+            Rectangle().frame(width: max(front - feather, 0))
+            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: min(front, feather))
         }
     }
 

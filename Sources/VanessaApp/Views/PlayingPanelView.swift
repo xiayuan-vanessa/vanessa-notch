@@ -35,11 +35,19 @@ struct PlayingPanelView: View {
     var expanded: Bool = false
     var onCommand: (MediaCommand) -> Void = { _ in }
 
+    /// 封面在顶行(收起)与控制区(展开)之间做共享元素过渡的命名空间。
+    @Namespace private var coverNamespace
+
     var body: some View {
         VStack(spacing: 3) {
             // 顶行:与菜单栏/刘海等高,封面与音频条分列刘海两侧(中间留出 185pt 刘海)。
+            // 展开时封面移交给控制区,借 matchedGeometryEffect 放大移动过去。
             HStack(spacing: 0) {
-                CoverView(data: display.artworkData).equatable()   // 仅封面数据变化时才重新解码
+                if !expanded {
+                    CoverView(data: display.artworkData, cornerRadius: 6).equatable()   // 仅封面数据变化时才重新解码
+                        .matchedGeometryEffect(id: CoverView.matchID, in: coverNamespace)
+                        .frame(width: 24, height: 24)
+                }
                 Spacer(minLength: 150)   // 中间空隙容纳物理刘海
                 DecorativeBars(isPlaying: display.isPlaying, color: accentColor)
             }
@@ -56,7 +64,8 @@ struct PlayingPanelView: View {
             .padding(.top, lyricTopOffset)
             Spacer(minLength: 0)
             if expanded {
-                PlaybackControlsView(display: display, accentColor: accentColor, onCommand: onCommand)
+                PlaybackControlsView(display: display, accentColor: accentColor,
+                                     coverNamespace: coverNamespace, onCommand: onCommand)
                     .transition(.opacity)
             }
         }
@@ -64,7 +73,26 @@ struct PlayingPanelView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 9)
         .frame(width: width, height: height + (expanded ? PlaybackControlsView.height : 0), alignment: .top)
-        .background(NotchIslandShape(radius: 18).fill(.black))
+        .background(islandBackground)
+    }
+
+    /// 面板背景:纯黑岛形 + 底部专辑色氛围光。
+    /// 氛围光经纵向渐变遮罩只铺在下半部,顶部保持纯黑以与物理刘海融为一体;换歌时新旧颜色淡入淡出。
+    private var islandBackground: some View {
+        NotchIslandShape(radius: 18).fill(.black)
+            .overlay {
+                ZStack {
+                    RadialGradient(colors: [accentColor.opacity(0.18), .clear],
+                                   center: .bottom, startRadius: 0, endRadius: width * 0.55)
+                        .id(accentColor)
+                        .transition(.opacity)
+                }
+                .animation(.easeInOut(duration: 0.6), value: accentColor)
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0.35),
+                                             .init(color: .black, location: 1)],
+                                     startPoint: .top, endPoint: .bottom))
+                .clipShape(NotchIslandShape(radius: 18))
+            }
     }
 
     /// 顶行高度:默认 30pt;刘海更高时(如缩放为「更多空间」分辨率)加高到刘海下沿,
@@ -90,17 +118,21 @@ struct PlayingPanelView: View {
 }
 
 /// 封面缩略图。实现 Equatable 配合 .equatable(),避免 30fps 刷新时每帧重复解码图片。
-private struct CoverView: View, Equatable {
+/// 尺寸由调用方在外层 frame 决定(自身可伸缩),以便 matchedGeometryEffect 过渡时平滑缩放。
+struct CoverView: View, Equatable {
+    /// 顶行封面与控制区封面共享的 matchedGeometryEffect 标识。
+    static let matchID = "cover"
+
     let data: Data?
+    var cornerRadius: CGFloat
 
     var body: some View {
         if let data, let img = NSImage(data: data) {
-            Image(nsImage: img).resizable().frame(width: 24, height: 24)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+            Image(nsImage: img).resizable()
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         } else {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(LinearGradient(colors: [.pink, .orange], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: 24, height: 24)
         }
     }
 }
