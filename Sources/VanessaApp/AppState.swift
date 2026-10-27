@@ -24,6 +24,8 @@ public struct PlayingDisplay: Equatable, Sendable {
     public var accentR: Double
     public var accentG: Double
     public var accentB: Double
+    /// 完整歌词行,供完整歌词列表展示;处于降级文案(无歌词/纯音乐)时为空。
+    public var lines: [LyricLine] = []
 }
 
 /// 全局 UI 状态。
@@ -245,6 +247,15 @@ public final class AppState: ObservableObject {
         refresh()
     }
 
+    /// 计算跳转到某行歌词时应发给播放器的进度(秒)。
+    /// 歌词定位使用「播放进度 + 全局提前量 + 本歌偏移」,因此目标进度要减去这两项,
+    /// 跳转后该行恰好成为当前行。
+    /// - Parameter startMs: 目标行的起始时间(毫秒,歌词时间轴)
+    /// - Returns: 播放器进度(秒),不小于 0
+    public func seekSeconds(forLineStartMs startMs: Int) -> Double {
+        max(Double(startMs) - lyricLeadMs - songOffsetMs, 0) / 1000
+    }
+
     // MARK: - 播放/暂停联动
 
     /// 按播放状态切换刷新定时器与暂停收起计时:
@@ -343,7 +354,8 @@ public final class AppState: ObservableObject {
             isPlaying: state.isPlaying,
             elapsed: max(rawMs / 1000, 0),
             duration: state.duration,
-            accentR: ar, accentG: ag, accentB: ab
+            accentR: ar, accentG: ag, accentB: ab,
+            lines: fallbackText == nil ? currentLyrics.lines : []
         ))
         // 内容未变(如暂停中)不重复发布,避免每秒 30 次无意义的视图刷新
         if next != ui { ui = next }

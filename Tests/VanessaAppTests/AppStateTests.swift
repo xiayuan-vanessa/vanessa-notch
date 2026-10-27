@@ -233,6 +233,30 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(d2.elapsed, 200, accuracy: 0.001, "超过总时长应夹到总时长")
     }
 
+    /// 点击歌词行跳转:目标进度要扣掉全局提前量与本歌偏移,跳转后该行恰好成为当前行;不得为负。
+    func test_seekSecondsForLine_subtractsLeadAndSongOffset() async {
+        let p = FakeProvider()
+        let prefs = isolatedPreferences()
+        let song = playing("晴天", "周杰伦")
+        prefs.setOffsetMs(500, for: song.songIdentity)
+        let lyrics = Lyrics(lines: [LyricLine(startMs: 0, endMs: 10_000, text: "第一句", words: []),
+                                    LyricLine(startMs: 10_000, endMs: 20_000, text: "第二句", words: [])])
+        let state = AppState(provider: p, repository: FakeRepo(result: .matched(songID: 1, lyrics: lyrics)),
+                             preferences: prefs)
+        state.lyricLeadMs = 250
+        state.start()
+        p.emit(paused(song))
+        await state.drainForTesting()
+
+        let target = state.seekSeconds(forLineStartMs: 10_000)
+        XCTAssertEqual(target, 9.25, accuracy: 0.001)   // 10000 - 250 - 500 = 9250ms
+        XCTAssertEqual(state.seekSeconds(forLineStartMs: 100), 0, "不得为负")
+
+        state.applySeek(toSeconds: target)
+        guard case .playing(let d) = state.ui else { return XCTFail("应处于 playing") }
+        XCTAssertEqual(d.lineText, "第二句", "跳转后目标行应成为当前行")
+    }
+
     func test_songOffset_persistsAndZeroRemoves() {
         let prefs = isolatedPreferences()
         prefs.setOffsetMs(300, for: "a")

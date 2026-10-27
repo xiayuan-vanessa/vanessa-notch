@@ -14,6 +14,12 @@ struct PlaybackControlsView: View {
     var onCommand: (MediaCommand) -> Void
     /// 拖动进度条松手后跳转,参数为目标进度(秒)。
     var onSeek: (Double) -> Void = { _ in }
+    /// 是否处于完整歌词模式:是则只显示「播放/暂停 + 进度条 + 歌词按钮」紧凑一行。
+    var showsLyrics: Bool = false
+    /// 是否有可展示的完整歌词;没有时不显示歌词按钮。
+    var lyricsAvailable: Bool = false
+    /// 点击歌词按钮,切换完整歌词模式。
+    var onToggleLyrics: () -> Void = {}
 
     /// 鼠标是否悬停在进度条上(悬停时进度条变粗)。
     @State private var hoveringProgress = false
@@ -21,21 +27,43 @@ struct PlaybackControlsView: View {
     @State private var dragFraction: CGFloat?
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 10) {
-                CoverView(data: display.artworkData, cornerRadius: 8).equatable()
-                    .matchedGeometryEffect(id: CoverView.matchID, in: coverNamespace)
-                    .frame(width: Self.coverSize, height: Self.coverSize)
-                songInfo
-                Spacer(minLength: 4)
-                HStack(spacing: 2) {
-                    button("backward.fill", .previousTrack)
-                    button(display.isPlaying ? "pause.fill" : "play.fill", .togglePlayPause)
-                    button("forward.fill", .nextTrack)
-                }
+        if showsLyrics {
+            // 歌词模式:歌词列表占据中部,这里只留紧凑一行;封面已回到顶行
+            HStack(spacing: 4) {
+                button(display.isPlaying ? "pause.fill" : "play.fill", .togglePlayPause)
+                progressRow
+                lyricsButton
             }
-            progressRow
+        } else {
+            VStack(spacing: 6) {
+                HStack(spacing: 10) {
+                    CoverView(data: display.artworkData, cornerRadius: 8).equatable()
+                        .matchedGeometryEffect(id: CoverView.matchID, in: coverNamespace)
+                        .frame(width: Self.coverSize, height: Self.coverSize)
+                    songInfo
+                    Spacer(minLength: 4)
+                    HStack(spacing: 2) {
+                        button("backward.fill", .previousTrack)
+                        button(display.isPlaying ? "pause.fill" : "play.fill", .togglePlayPause)
+                        button("forward.fill", .nextTrack)
+                        if lyricsAvailable { lyricsButton }
+                    }
+                }
+                progressRow
+            }
         }
+    }
+
+    /// 「歌词」按钮:切换完整歌词列表;歌词模式下以主题色表示已开启。
+    private var lyricsButton: some View {
+        Button(action: onToggleLyrics) {
+            Image(systemName: "quote.bubble")
+                .font(.system(size: 13))
+                .foregroundStyle(showsLyrics ? accentColor : .white)
+                .frame(width: 26, height: 26)
+                .contentShape(Circle())
+        }
+        .buttonStyle(ControlButtonStyle())
     }
 
     /// 歌名(加粗)与歌手两行,超长截断;无歌手时只显示歌名。

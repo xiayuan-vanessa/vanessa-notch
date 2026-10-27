@@ -36,6 +36,19 @@ struct PlayingPanelView: View {
     var onCommand: (MediaCommand) -> Void = { _ in }
     /// 跳转到指定进度(秒)。
     var onSeek: (Double) -> Void = { _ in }
+    /// 是否显示完整歌词列表(仅在展开时生效)。
+    var showsLyrics: Bool = false
+    /// 点击歌词按钮,切换完整歌词列表。
+    var onToggleLyrics: () -> Void = {}
+    /// 点击完整歌词中的某一行。
+    var onSelectLine: (LyricLine) -> Void = { _ in }
+
+    /// 展开时面板在基础高度之上增加的高度(pt):控制区;歌词模式再加歌词列表。
+    /// RootView 与 AppDelegate 据此计算面板与窗口高度,三处必须一致。
+    static func extraHeight(expanded: Bool, showsLyrics: Bool) -> CGFloat {
+        guard expanded else { return 0 }
+        return PlaybackControlsView.height + (showsLyrics ? LyricsListView.extraHeight : 0)
+    }
 
     /// 封面在顶行(收起)与控制区(展开)之间做共享元素过渡的命名空间。
     @Namespace private var coverNamespace
@@ -43,9 +56,9 @@ struct PlayingPanelView: View {
     var body: some View {
         VStack(spacing: 3) {
             // 顶行:与菜单栏/刘海等高,封面与音频条分列刘海两侧(中间留出 185pt 刘海)。
-            // 展开时封面移交给控制区,借 matchedGeometryEffect 放大移动过去。
+            // 展开时封面移交给控制区,借 matchedGeometryEffect 放大移动过去;歌词模式下控制区无封面,留在顶行。
             HStack(spacing: 0) {
-                if !expanded {
+                if !expanded || showsLyrics {
                     CoverView(data: display.artworkData, cornerRadius: 6).equatable()   // 仅封面数据变化时才重新解码
                         .matchedGeometryEffect(id: CoverView.matchID, in: coverNamespace)
                         .frame(width: 24, height: 24)
@@ -54,27 +67,39 @@ struct PlayingPanelView: View {
                 DecorativeBars(isPlaying: display.isPlaying, color: accentColor)
             }
             .frame(height: headerHeight)
-            // 歌词:刘海正下方居中。换行时旧行上移淡出、新行自下淡入。
-            ZStack {
-                lyricBlock
-                    .id(display.position.lineIndex)
-                    .transition(.asymmetric(
-                        insertion: .opacity.combined(with: .offset(y: 6)),
-                        removal: .opacity.combined(with: .offset(y: -6))))
+            if showsLyrics {
+                // 完整歌词模式:列表占满中部剩余空间
+                LyricsListView(lines: display.lines, currentIndex: display.position.lineIndex,
+                               fontSize: fontSize, accentColor: accentColor,
+                               showTranslation: showTranslation, onSelect: onSelectLine)
+                    .padding(.top, lyricTopOffset)
+                    .transition(.opacity)
+            } else {
+                // 歌词:刘海正下方居中。换行时旧行上移淡出、新行自下淡入。
+                ZStack {
+                    lyricBlock
+                        .id(display.position.lineIndex)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .offset(y: 6)),
+                            removal: .opacity.combined(with: .offset(y: -6))))
+                }
+                .animation(.easeOut(duration: 0.25), value: display.position.lineIndex)
+                .padding(.top, lyricTopOffset)
+                Spacer(minLength: 0)
             }
-            .animation(.easeOut(duration: 0.25), value: display.position.lineIndex)
-            .padding(.top, lyricTopOffset)
-            Spacer(minLength: 0)
             if expanded {
                 PlaybackControlsView(display: display, accentColor: accentColor,
-                                     coverNamespace: coverNamespace, onCommand: onCommand, onSeek: onSeek)
+                                     coverNamespace: coverNamespace, onCommand: onCommand, onSeek: onSeek,
+                                     showsLyrics: showsLyrics, lyricsAvailable: !display.lines.isEmpty,
+                                     onToggleLyrics: onToggleLyrics)
                     .transition(.opacity)
             }
         }
         .padding(.top, 2)
         .padding(.horizontal, 12)
         .padding(.bottom, 9)
-        .frame(width: width, height: height + (expanded ? PlaybackControlsView.height : 0), alignment: .top)
+        .frame(width: width, height: height + Self.extraHeight(expanded: expanded, showsLyrics: showsLyrics),
+               alignment: .top)
         .background(islandBackground)
     }
 

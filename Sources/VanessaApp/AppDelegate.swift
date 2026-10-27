@@ -147,11 +147,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 空闲胶囊尺寸。
     private static let idleSize = CGSize(width: 140, height: 40)
     /// 播放岛尺寸:取自用户设置(下限做保护以避开物理刘海/过矮)。
-    /// 高度始终预留悬停控制区,展开/收起只在 SwiftUI 内做动画,不改窗口尺寸(改尺寸会闪一帧);
-    /// 收起时预留区域是透明的,点击会穿透到下层窗口,悬停区域由 RootView 限定在面板内。
+    /// 高度始终按最高形态(展开 + 完整歌词列表)预留,展开/收起/切换歌词只在 SwiftUI 内做动画,
+    /// 不改窗口尺寸(改尺寸会闪一帧);未占用的预留区域是透明的,点击会穿透到下层窗口,
+    /// 悬停区域由 RootView 限定在面板内。
     private func playingSize() -> CGSize {
         CGSize(width: max(240, settings.panelWidth),
-               height: settings.totalPanelHeight + PlaybackControlsView.height)
+               height: settings.totalPanelHeight + PlayingPanelView.extraHeight(expanded: true, showsLyrics: true))
     }
     /// 上一次的状态种类(0 空闲 / 1 警告 / 2 播放),用于避免重复设尺寸。
     private var lastKind = -1

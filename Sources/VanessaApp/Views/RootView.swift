@@ -24,6 +24,8 @@ struct RootView: View {
     @State private var displaySnapshot: PlayingDisplay?
     /// 播放控制区是否展开。
     @State private var expanded = false
+    /// 是否切到完整歌词列表(点控制区歌词按钮切换;收起时复位)。
+    @State private var showsLyrics = false
     /// 悬停延迟展开任务;移出时取消。
     @State private var hoverTask: Task<Void, Never>?
 
@@ -48,7 +50,10 @@ struct RootView: View {
                                  lyricTopOffset: CGFloat(settings.lyricTopOffset),
                                  expanded: expanded,
                                  onCommand: onCommand,
-                                 onSeek: onSeek)
+                                 onSeek: onSeek,
+                                 showsLyrics: lyricsListShown,
+                                 onToggleLyrics: toggleLyrics,
+                                 onSelectLine: { onSeek(appState.seekSeconds(forLineStartMs: $0.startMs)) })
                     .opacity(morphProgress)
             }
 
@@ -77,6 +82,7 @@ struct RootView: View {
             } else {
                 hoverTask?.cancel()
                 expanded = false
+                showsLyrics = false
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
                     morphProgress = 0
                 }
@@ -94,9 +100,23 @@ struct RootView: View {
         }
     }
 
-    /// 面板当前高度(含展开的控制区)。
+    /// 面板当前高度(含展开的控制区与歌词列表)。
     private var panelHeight: CGFloat {
-        CGFloat(settings.totalPanelHeight) + (expanded ? PlaybackControlsView.height : 0)
+        CGFloat(settings.totalPanelHeight)
+            + PlayingPanelView.extraHeight(expanded: expanded, showsLyrics: lyricsListShown)
+    }
+
+    /// 实际是否显示完整歌词列表:需已展开、已切到歌词模式,且当前歌曲有歌词
+    /// (换到无歌词的歌时自动退回控制区布局)。
+    private var lyricsListShown: Bool {
+        expanded && showsLyrics && !(currentDisplay?.lines.isEmpty ?? true)
+    }
+
+    /// 切换完整歌词列表,与展开/收起使用同一弹簧动画。
+    private func toggleLyrics() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            showsLyrics.toggle()
+        }
     }
 
     /// 悬停 0.3s 后展开控制区(避免鼠标路过时误触发);移出立即收起。仅播放态生效。
@@ -120,6 +140,7 @@ struct RootView: View {
         guard value != expanded else { return }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             expanded = value
+            if !value { showsLyrics = false }   // 收起即退出歌词模式,下次悬停回到控制区
         }
     }
 
