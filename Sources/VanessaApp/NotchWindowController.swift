@@ -27,6 +27,14 @@ public final class NotchWindowController {
     public var preferredScreenID: String? {
         didSet { if preferredScreenID != oldValue { reposition() } }
     }
+    /// 可交互区域高度(pt,自窗口顶边向下),即面板当前可见部分;默认整窗可交互。
+    /// 窗口其余部分是为展开 / 歌词列表预留的透明区域,鼠标在那里时窗口忽略鼠标事件,
+    /// 让点击直达下层窗口或桌面(否则会挡住其他 App,台前调度也无法点桌面)。
+    public var interactiveHeight: CGFloat = .greatestFiniteMagnitude {
+        didSet { if interactiveHeight != oldValue { updateMousePassthrough() } }
+    }
+    /// 鼠标移动监听器(全局 + 本 App),随 App 生命周期常驻。
+    private var mouseMonitors: [Any] = []
 
     /// - Parameters:
     ///   - rootView: SwiftUI 根视图(随 AppState 变化)。
@@ -42,6 +50,7 @@ public final class NotchWindowController {
         window.level = .statusBar + 1
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         window.ignoresMouseEvents = false
+        window.acceptsMouseMovedEvents = true   // 本 App 鼠标移动监听需要窗口接收 mouseMoved
         window.contentView = hosting
         reposition()
     }
@@ -62,6 +71,7 @@ public final class NotchWindowController {
         let frame = NotchGeometry.panelFrame(screenFrame: screen.frame,
                                              notchSize: notch, panelSize: contentSize)
         window.setFrame(frame.offsetBy(dx: horizontalOffset, dy: 0), display: true)
+        updateMousePassthrough()   // 窗口位置 / 尺寸变了,可交互区域随之变化
     }
 
     /// 选定目标屏:用户指定的屏优先;否则优先带刘海的屏(safeAreaInsets.top > 0),再否则用主屏。
@@ -93,6 +103,36 @@ public final class NotchWindowController {
         let rightWidth = screen.auxiliaryTopRightArea?.width ?? 0
         let notchWidth = max(0, screen.frame.width - leftWidth - rightWidth)
         return CGSize(width: notchWidth > 0 ? notchWidth : 200, height: top)
+    }
+
+    /// 开始跟踪鼠标位置,按是否位于可交互区域切换窗口的鼠标穿透。
+    /// 鼠标在下层其他 App 上移动时由全局监听收到,在本窗口上移动时由本地监听收到;
+    /// 监听鼠标事件不需要辅助功能权限。只需调用一次。
+    public func trackMousePassthrough() {
+        guard mouseMonitors.isEmpty else { return }
+        let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseUp, .rightMouseUp]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: events, handler: { [weak self] _ in
+            self?.updateMousePassthrough()
+        }) {
+            mouseMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: events, handler: { [weak self] event in
+            self?.updateMousePassthrough()
+            return event
+        }) {
+            mouseMonitors.append(local)
+        }
+    }
+
+    /// 鼠标在可交互区域内时接收事件,否则忽略事件(点击穿透到下层)。
+    /// 按住鼠标(如拖动进度条)期间不切换,避免拖出面板时手势被中断;松开后由 mouseUp 事件补一次判断。
+    private func updateMousePassthrough() {
+        guard NSEvent.pressedMouseButtons == 0 else { return }
+        let frame = window.frame
+        let height = min(interactiveHeight, frame.height)
+        let interactive = NSRect(x: frame.minX, y: frame.maxY - height, width: frame.width, height: height)
+        let shouldIgnore = !interactive.contains(NSEvent.mouseLocation)
+        if window.ignoresMouseEvents != shouldIgnore { window.ignoresMouseEvents = shouldIgnore }
     }
 
     /// 延迟收缩窗口（供变形动画完成后调用）。

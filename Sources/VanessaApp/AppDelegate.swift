@@ -49,12 +49,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                             },
                             onCommand: { [weak self] in self?.provider.send($0) },
                             onSeek: { [weak self] in self?.seek(toSeconds: $0) },
+                            onInteractiveHeightChange: { [weak self] in self?.setInteractiveHeight($0) },
                             onCorrectLyrics: { [weak self] in self?.openLyricsCorrection() })
         windowController = NotchWindowController(rootView: AnyView(root), metrics: metrics)
         windowController.contentSize = playingSize()   // 初始给播放尺寸(取自设置)
         windowController.horizontalOffset = CGFloat(settings.offsetX)
         windowController.preferredScreenID = settings.screenID.isEmpty ? nil : settings.screenID
         windowController.observeScreenChanges()
+        windowController.interactiveHeight = interactiveHeight   // 补上窗口创建前已上报的高度
+        windowController.trackMousePassthrough()
         loadLaunchAtLoginState()
         observeFullscreen()
         windowController.show()
@@ -152,8 +155,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let idleSize = CGSize(width: 140, height: 40)
     /// 播放岛尺寸:取自用户设置(下限做保护以避开物理刘海/过矮)。
     /// 高度始终按最高形态(展开 + 完整歌词列表)预留,展开/收起/切换歌词只在 SwiftUI 内做动画,
-    /// 不改窗口尺寸(改尺寸会闪一帧);未占用的预留区域是透明的,点击会穿透到下层窗口,
-    /// 悬停区域由 RootView 限定在面板内。
+    /// 不改窗口尺寸(改尺寸会闪一帧);未占用的透明预留区域由窗口控制器按鼠标位置切换为
+    /// 忽略鼠标事件,点击直达下层窗口或桌面;悬停区域由 RootView 限定在面板内。
     private func playingSize() -> CGSize {
         CGSize(width: max(240, settings.panelWidth),
                height: settings.totalPanelHeight + PlayingPanelView.extraHeight(expanded: true, showsLyrics: true))
@@ -215,6 +218,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         quit.target = self
         menu.addItem(quit)
         return menu
+    }
+
+    /// 面板最近一次上报的可交互高度。RootView 首次上报(onAppear)可能早于 windowController 创建,
+    /// 先记下,创建后再补设。
+    private var interactiveHeight: CGFloat = .greatestFiniteMagnitude
+
+    /// 记录并下发面板可交互高度,窗口据此让下方透明预留区鼠标穿透。
+    private func setInteractiveHeight(_ height: CGFloat) {
+        interactiveHeight = height
+        windowController?.interactiveHeight = height
     }
 
     /// 跳转播放进度:通知播放器跳转,并在本地乐观更新时钟让界面立即跟上。

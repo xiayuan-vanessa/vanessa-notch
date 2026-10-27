@@ -16,6 +16,8 @@ struct RootView: View {
     var onCommand: (MediaCommand) -> Void = { _ in }
     /// 跳转到指定进度(秒)。
     var onSeek: (Double) -> Void = { _ in }
+    /// 面板可交互高度变化(收起 / 展开 / 歌词模式切换)时回调,窗口据此让下方透明预留区鼠标穿透。
+    var onInteractiveHeightChange: (CGFloat) -> Void = { _ in }
     /// 打开「校正歌词」窗口。
     var onCorrectLyrics: () -> Void = {}
 
@@ -61,8 +63,8 @@ struct RootView: View {
                 idleContent.opacity(1 - morphProgress)
             }
         }
-        // 交互区域限定在面板当前高度内:窗口下方为控制区预留的透明区域既不触发悬停,
-        // 点击也会穿透到下层窗口(透明像素由系统按 alpha 放行)。
+        // 交互区域限定在面板当前高度内:窗口下方为控制区预留的透明区域不触发悬停;
+        // 点击穿透由窗口控制器按 onInteractiveHeightChange 上报的高度切换 ignoresMouseEvents 实现。
         .frame(maxWidth: .infinity, maxHeight: panelHeight, alignment: .top)
         .contentShape(MorphingNotchShape(progress: morphProgress))
         .onHover { handleHover($0) }
@@ -95,7 +97,9 @@ struct RootView: View {
         .onChange(of: playingDisplay) { display in
             if let display { displaySnapshot = display }
         }
+        .onChange(of: panelHeight) { onInteractiveHeightChange($0) }
         .onAppear {
+            onInteractiveHeightChange(panelHeight)
             if stateKind == 2 { morphProgress = 1 }
         }
     }
