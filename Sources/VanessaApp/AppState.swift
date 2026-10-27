@@ -40,7 +40,25 @@ public final class AppState: ObservableObject {
     @Published public private(set) var ui: AppUIState = .idle
 
     /// 歌词提前量(毫秒):正值让逐字高亮提前,补偿管道/感知延迟。由设置实时调节。
-    public var lyricLeadMs: Double = 250
+    /// 暂停时定时器不运行,因此变更后主动刷新一次,让调节立即可见。
+    public var lyricLeadMs: Double = 250 {
+        didSet { if lyricLeadMs != oldValue { refresh() } }
+    }
+
+    /// 暂停多少秒后自动收起面板;0 表示不收起。由设置实时调节。
+    /// 变更时按新值重新计时(暂停中改为 0 会立即恢复面板)。
+    public var pauseHideDelay: TimeInterval = 0 {
+        didSet {
+            guard pauseHideDelay != oldValue else { return }
+            cancelPauseHide()
+            if let state = latestState, !state.isPlaying { schedulePauseHide() }
+            refresh()
+        }
+    }
+    /// 是否因暂停超时而收起面板;为 true 时 refresh 只输出 .idle。
+    private var hiddenForPause = false
+    /// 暂停超时收起的计时任务。
+    private var pauseHideTask: Task<Void, Never>?
 
     private let provider: NowPlayingProvider
     private let repository: LyricsRepository
@@ -73,7 +91,7 @@ public final class AppState: ObservableObject {
         self.preferences = preferences
     }
 
-    /// 启动订阅流并开启 30fps 刷新定时器。
+    /// 启动订阅流。30fps 刷新定时器在收到「播放中」状态时才启动(见 updatePlaybackActivity)。
     public func start() {
         provider.start()
         streamTask = Task { [weak self] in
@@ -82,15 +100,14 @@ public final class AppState: ObservableObject {
                 await self.handle(state)
             }
         }
-        startTicker()
     }
 
     /// 停止订阅与定时器，释放资源。
     public func stop() {
         streamTask?.cancel()
         streamTask = nil
-        ticker?.invalidate()
-        ticker = nil
+        stopTicker()
+        cancelPauseHide()
         provider.stop()
     }
 
@@ -102,6 +119,9 @@ public final class AppState: ObservableObject {
             latestState = nil
             clock = nil
             accentRGB = nil
+            stopTicker()
+            cancelPauseHide()
+            hiddenForPause = false
             ui = .idle
             return
         }
@@ -110,6 +130,7 @@ public final class AppState: ObservableObject {
             clock = PlaybackClock(state: state)
         }
         latestState = state
+        updatePlaybackActivity(isPlaying: state.isPlaying)
         // 封面图可能晚于元数据到达，补提取主色调（后台线程避免阻塞 UI）
         if accentRGB == nil, let data = state.artworkData {
             accentRGB = await Task.detached {
@@ -200,11 +221,51 @@ public final class AppState: ObservableObject {
         preferences.offsetMs(for: identity)
     }
 
-    /// 设置某首歌的单曲偏移;若该歌正在播放则立即生效。
+    /// 设置某首歌的单曲偏移;若该歌正在播放则立即生效(暂停中也刷新一次,让调节立即可见)。
     public func setSongOffset(_ ms: Double, for identity: String) {
         preferences.setOffsetMs(ms, for: identity)
-        if latestState?.songIdentity == identity { songOffsetMs = ms }
+        if latestState?.songIdentity == identity {
+            songOffsetMs = ms
+            refresh()
+        }
     }
+
+    // MARK: - 播放/暂停联动
+
+    /// 按播放状态切换刷新定时器与暂停收起计时:
+    /// 播放中 → 启动定时器、取消收起计时并恢复面板;暂停 → 停掉定时器(进度不再前进,无需逐帧刷新)并开始收起计时。
+    private func updatePlaybackActivity(isPlaying: Bool) {
+        if isPlaying {
+            if ticker == nil { startTicker() }
+            cancelPauseHide()
+            hiddenForPause = false
+        } else {
+            stopTicker()
+            if pauseHideTask == nil && !hiddenForPause { schedulePauseHide() }
+        }
+    }
+
+    /// 开始暂停收起计时:pauseHideDelay 秒后标记收起并切到 .idle。延时为 0 时不计时。
+    private func schedulePauseHide() {
+        guard pauseHideDelay > 0 else { return }
+        let delay = pauseHideDelay
+        pauseHideTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }   // 期间已恢复播放或重置
+            self.pauseHideTask = nil
+            self.hiddenForPause = true
+            self.refresh()
+        }
+    }
+
+    /// 取消尚未触发的暂停收起计时(不改变已收起状态)。
+    private func cancelPauseHide() {
+        pauseHideTask?.cancel()
+        pauseHideTask = nil
+    }
+
+    /// 刷新定时器是否在运行;仅供测试断言。
+    var isTickerRunning: Bool { ticker != nil }
 
     /// 启动 30fps 定时刷新，挂在 RunLoop.main 上以兼容非 UI 场景。
     private func startTicker() {
@@ -215,9 +276,20 @@ public final class AppState: ObservableObject {
         ticker = t
     }
 
+    /// 停止刷新定时器。
+    private func stopTicker() {
+        ticker?.invalidate()
+        ticker = nil
+    }
+
     /// 用当前时钟位置定位歌词行，更新 UI 状态。
     func refresh() {
         guard let state = latestState, let clock else { return }
+        // 暂停超时已收起:保持空闲胶囊,恢复播放时 hiddenForPause 被清除后再正常输出
+        if hiddenForPause {
+            if ui != .idle { ui = .idle }
+            return
+        }
         // 提前 lyricLeadMs 补偿采样/渲染管道与感知延迟,让逐字高亮卡在字头而非滞后(可在设置调节)。
         let rawMs = clock.positionMs(at: Date())
         let posMs = rawMs + lyricLeadMs + songOffsetMs

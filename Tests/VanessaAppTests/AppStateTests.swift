@@ -132,6 +132,82 @@ final class AppStateTests: XCTestCase {
         XCTAssertNil(prefs.songID(for: song.songIdentity))
     }
 
+    // MARK: - 暂停联动
+
+    private func paused(_ s: NowPlayingState) -> NowPlayingState {
+        var p = s
+        p.isPlaying = false
+        p.rate = 0
+        return p
+    }
+
+    private func matchedState(_ p: FakeProvider) -> AppState {
+        AppState(provider: p, repository: FakeRepo(result: .matched(songID: 1, lyrics: line("歌词"))),
+                 preferences: isolatedPreferences())
+    }
+
+    func test_ticker_runsOnlyWhilePlaying() async {
+        let p = FakeProvider()
+        let state = matchedState(p)
+        state.start()
+        XCTAssertFalse(state.isTickerRunning, "未播放时不应启动定时器")
+        let song = playing("晴天", "周杰伦")
+        p.emit(song)
+        await state.drainForTesting()
+        XCTAssertTrue(state.isTickerRunning)
+        p.emit(paused(song))
+        await state.drainForTesting()
+        XCTAssertFalse(state.isTickerRunning, "暂停后应停掉定时器")
+        p.emit(nil)
+        await state.drainForTesting()
+        XCTAssertFalse(state.isTickerRunning)
+    }
+
+    func test_pauseHide_collapsesAfterDelayAndRestoresOnResume() async throws {
+        let p = FakeProvider()
+        let state = matchedState(p)
+        state.pauseHideDelay = 0.05
+        state.start()
+        let song = playing("晴天", "周杰伦")
+        p.emit(song)
+        p.emit(paused(song))
+        await state.drainForTesting()
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(state.ui, .idle, "暂停超过延时应收起")
+        p.emit(song)
+        await state.drainForTesting()
+        guard case .playing(let d) = state.ui else { return XCTFail("恢复播放应重新展开") }
+        XCTAssertEqual(d.lineText, "歌词")
+    }
+
+    func test_pauseHide_zeroDelay_staysPlaying() async throws {
+        let p = FakeProvider()
+        let state = matchedState(p)
+        state.start()
+        let song = playing("晴天", "周杰伦")
+        p.emit(song)
+        p.emit(paused(song))
+        await state.drainForTesting()
+        try await Task.sleep(nanoseconds: 150_000_000)
+        guard case .playing(let d) = state.ui else { return XCTFail("延时为 0 时不应收起") }
+        XCTAssertFalse(d.isPlaying)
+    }
+
+    func test_pauseHide_resumeBeforeDelay_cancelsCollapse() async throws {
+        let p = FakeProvider()
+        let state = matchedState(p)
+        state.pauseHideDelay = 0.1
+        state.start()
+        let song = playing("晴天", "周杰伦")
+        p.emit(song)
+        p.emit(paused(song))
+        await state.drainForTesting()
+        p.emit(song)   // 延时到达前恢复播放
+        await state.drainForTesting()
+        try await Task.sleep(nanoseconds: 150_000_000)
+        guard case .playing = state.ui else { return XCTFail("提前恢复播放不应收起") }
+    }
+
     func test_songOffset_persistsAndZeroRemoves() {
         let prefs = isolatedPreferences()
         prefs.setOffsetMs(300, for: "a")

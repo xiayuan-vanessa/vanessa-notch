@@ -19,6 +19,8 @@ public final class Settings: ObservableObject {
     @AppStorage("screenID") public var screenID: String = ""
     /// 前台应用全屏时自动隐藏刘海面板。
     @AppStorage("hideInFullscreen") public var hideInFullscreen: Bool = true
+    /// 暂停多少秒后自动收起面板;0 表示不收起。
+    @AppStorage("pauseHideSeconds") public var pauseHideSeconds: Double = 0
     /// 歌词顶部额外间距(pt):在自动避让刘海的基础上再下移歌词,面板同步加高。
     @AppStorage("lyricTopOffset") public var lyricTopOffset: Double = 0
     public init() {}

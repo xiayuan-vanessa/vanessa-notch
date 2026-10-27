@@ -50,6 +50,12 @@ struct SettingsView: View {
                     }
                 }
                 Toggle("全屏应用时自动隐藏", isOn: $settings.hideInFullscreen)
+                Picker("暂停后自动收起", selection: $settings.pauseHideSeconds) {
+                    Text("不收起").tag(0.0)
+                    Text("5 秒后").tag(5.0)
+                    Text("30 秒后").tag(30.0)
+                    Text("1 分钟后").tag(60.0)
+                }
             }
             Section("通用") {
                 Toggle("开机启动", isOn: $settings.launchAtLogin)

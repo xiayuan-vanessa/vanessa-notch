@@ -35,6 +35,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let repository = NeteaseLyricsRepository(source: NeteaseAPIClient(), cache: cache)
         appState = AppState(provider: provider, repository: repository)
         appState.lyricLeadMs = settings.lyricOffsetMs   // 初始歌词偏移
+        appState.pauseHideDelay = settings.pauseHideSeconds   // 初始暂停收起延时
 
         // 常驻根视图:用 MorphingNotchShape 变形;收缩动画结束后回调缩小窗口。
         let metrics = NotchMetrics()
@@ -75,6 +76,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] in
                 guard let self else { return }
                 self.appState.lyricLeadMs = self.settings.lyricOffsetMs   // 实时同步歌词偏移
+                self.appState.pauseHideDelay = self.settings.pauseHideSeconds   // 实时同步暂停收起延时
                 self.windowController.horizontalOffset = CGFloat(self.settings.offsetX)
                 self.windowController.preferredScreenID = self.settings.screenID.isEmpty ? nil : self.settings.screenID
                 if self.lastKind == 2 { self.windowController.contentSize = self.playingSize() }
