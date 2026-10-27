@@ -45,6 +45,35 @@ final class LyricSyncEngineTests: XCTestCase {
         XCTAssertEqual(p.lineProgress, 1.0, accuracy: 0.001)
     }
 
+    /// 字与字之间有停顿(如「可以 很长」的空格处):应保持上一个字已唱完,
+    /// 而不是退回按时间计算的 lineProgress(那会让高亮往回跳)。
+    func test_gapBetweenWords_holdsPreviousWordCompleted() {
+        let lyrics = Lyrics(lines: [
+            LyricLine(startMs: 1000, endMs: 4000, text: "可以很长",
+                      words: [Word(startMs: 1000, endMs: 1500, text: "可"),
+                              Word(startMs: 1500, endMs: 2000, text: "以"),
+                              Word(startMs: 3000, endMs: 3500, text: "很"),
+                              Word(startMs: 3500, endMs: 4000, text: "长")]),
+        ])
+        let p = LyricSyncEngine.locate(positionMs: 2500, in: lyrics)
+        XCTAssertEqual(p.lineIndex, 0)
+        XCTAssertEqual(p.activeWordIndex, 1)
+        XCTAssertEqual(p.wordProgress, 1.0, accuracy: 0.001)
+    }
+
+    /// 行已开始但第一个字还没开始:应为第一个字、进度 0,不提前点亮。
+    func test_beforeFirstWordInLine_startsAtFirstWordZero() {
+        let lyrics = Lyrics(lines: [
+            LyricLine(startMs: 1000, endMs: 3000, text: "你好",
+                      words: [Word(startMs: 1500, endMs: 2000, text: "你"),
+                              Word(startMs: 2000, endMs: 3000, text: "好")]),
+        ])
+        let p = LyricSyncEngine.locate(positionMs: 1200, in: lyrics)
+        XCTAssertEqual(p.lineIndex, 0)
+        XCTAssertEqual(p.activeWordIndex, 0)
+        XCTAssertEqual(p.wordProgress, 0, accuracy: 0.001)
+    }
+
     func test_emptyLyrics_noHighlight() {
         let p = LyricSyncEngine.locate(positionMs: 1000, in: Lyrics(lines: []))
         XCTAssertEqual(p, .none)

@@ -26,7 +26,11 @@ public enum LyricSyncEngine {
         }
         for (wi, w) in line.words.enumerated() {
             if posI < w.startMs {
-                return LyricPosition(lineIndex: idx, activeWordIndex: nil, wordProgress: 0, lineProgress: lineProgress)
+                // 字间停顿:保持上一个字已唱完;行首到第一个字之间:停在第一个字、进度 0。
+                // 不返回 nil,否则视图会改用按时间计算的 lineProgress,与按字宽计算的口径不一致而导致高亮回跳。
+                return wi == 0
+                    ? LyricPosition(lineIndex: idx, activeWordIndex: 0, wordProgress: 0, lineProgress: lineProgress)
+                    : LyricPosition(lineIndex: idx, activeWordIndex: wi - 1, wordProgress: 1, lineProgress: lineProgress)
             }
             if posI < w.endMs {
                 let span = max(w.endMs - w.startMs, 1)
