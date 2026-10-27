@@ -19,8 +19,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var correctionWindow: NSWindow?
     private var provider: MediaRemoteNowPlayingProvider!
     private var adapterAvailable = true
-    /// 播放控制区是否展开(展开时窗口加高)。
-    private var isExpanded = false
 
     /// 内嵌资源路径:bundle 内 Resources 下的 adapter 脚本与 framework。
     private func adapterPaths() -> (script: String, framework: String) {
@@ -46,7 +44,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                                 self?.windowController.contentSize = Self.idleSize
                             },
                             onCommand: { [weak self] in self?.provider.send($0) },
-                            onExpandChange: { [weak self] in self?.setExpanded($0) },
                             onCorrectLyrics: { [weak self] in self?.openLyricsCorrection() })
         windowController = NotchWindowController(rootView: AnyView(root), metrics: metrics)
         windowController.contentSize = playingSize()   // 初始给播放尺寸(取自设置)
@@ -148,16 +145,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 空闲胶囊尺寸。
     private static let idleSize = CGSize(width: 140, height: 40)
-    /// 播放岛尺寸:取自用户设置(下限做保护以避开物理刘海/过矮);控制区展开时加上控制区高度。
+    /// 播放岛尺寸:取自用户设置(下限做保护以避开物理刘海/过矮)。
+    /// 高度始终预留悬停控制区,展开/收起只在 SwiftUI 内做动画,不改窗口尺寸(改尺寸会闪一帧);
+    /// 收起时预留区域是透明的,点击会穿透到下层窗口,悬停区域由 RootView 限定在面板内。
     private func playingSize() -> CGSize {
-        let extra = isExpanded ? PlaybackControlsView.height : 0
-        return CGSize(width: max(240, settings.panelWidth), height: settings.totalPanelHeight + extra)
-    }
-
-    /// 控制区展开/收起:记录状态,正在播放时同步窗口尺寸。
-    private func setExpanded(_ expanded: Bool) {
-        isExpanded = expanded
-        if lastKind == 2 { windowController.contentSize = playingSize() }
+        CGSize(width: max(240, settings.panelWidth),
+               height: settings.totalPanelHeight + PlaybackControlsView.height)
     }
     /// 上一次的状态种类(0 空闲 / 1 警告 / 2 播放),用于避免重复设尺寸。
     private var lastKind = -1

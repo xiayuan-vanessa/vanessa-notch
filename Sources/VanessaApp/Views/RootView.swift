@@ -14,8 +14,6 @@ struct RootView: View {
     var onShrinkComplete: (() -> Void)?
     /// 控制区按钮发出的播放命令。
     var onCommand: (MediaCommand) -> Void = { _ in }
-    /// 控制区展开/收起时通知窗口调整尺寸:展开前立即调用;收起动画结束后调用。
-    var onExpandChange: (Bool) -> Void = { _ in }
     /// 打开「校正歌词」窗口。
     var onCorrectLyrics: () -> Void = {}
 
@@ -29,7 +27,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            // 黑色底形限高到面板高度:控制区收起动画期间窗口尚未缩小,底形需随面板一起收缩。
+            // 黑色底形限高到面板高度:播放时窗口按展开高度预留,底形需随面板一起伸缩。
             MorphingNotchShape(progress: morphProgress)
                 .fill(.black)
                 .frame(maxHeight: panelHeight)
@@ -55,7 +53,9 @@ struct RootView: View {
                 idleContent.opacity(1 - morphProgress)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 交互区域限定在面板当前高度内:窗口下方为控制区预留的透明区域既不触发悬停,
+        // 点击也会穿透到下层窗口(透明像素由系统按 alpha 放行)。
+        .frame(maxWidth: .infinity, maxHeight: panelHeight, alignment: .top)
         .contentShape(MorphingNotchShape(progress: morphProgress))
         .onHover { handleHover($0) }
         .contextMenu {
@@ -65,6 +65,7 @@ struct RootView: View {
             Button("偏好设置") { onOpenSettings() }
             Button("退出") { onQuit() }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onChange(of: stateKind) { newKind in
             if newKind == 2 {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
@@ -72,10 +73,7 @@ struct RootView: View {
                 }
             } else {
                 hoverTask?.cancel()
-                if expanded {
-                    expanded = false
-                    onExpandChange(false)
-                }
+                expanded = false
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
                     morphProgress = 0
                 }
@@ -113,17 +111,12 @@ struct RootView: View {
         }
     }
 
-    /// 切换展开状态:展开时先扩大窗口再做动画;收起时先做动画,结束后再缩小窗口。
+    /// 切换展开状态,仅做 SwiftUI 动画。
+    /// 窗口已按展开高度预留,这里不再改窗口尺寸:改尺寸那一帧系统会先拉伸旧画面显示,造成闪烁。
     private func setExpanded(_ value: Bool) {
         guard value != expanded else { return }
-        if value { onExpandChange(true) }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             expanded = value
-        }
-        if !value {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                if !expanded { onExpandChange(false) }   // 动画期间又展开了则不缩窗口
-            }
         }
     }
 
