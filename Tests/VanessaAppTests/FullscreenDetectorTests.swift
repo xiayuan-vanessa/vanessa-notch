@@ -41,6 +41,29 @@ final class FullscreenDetectorTests: XCTestCase {
         XCTAssertFalse(detect([w]))
     }
 
+    // MARK: - 空间类型解析
+
+    private func display(_ id: String, type: Int) -> [String: Any] {
+        ["Display Identifier": id, "Current Space": ["type": NSNumber(value: type)]]
+    }
+
+    func test_spaceType_matchesDisplayByID() {
+        let displays = [display("AAA", type: 0), display("BBB", type: 4)]
+        XCTAssertEqual(FullscreenDetector.currentSpaceType(in: displays, displayID: "BBB"), 4)
+        XCTAssertEqual(FullscreenDetector.currentSpaceType(in: displays, displayID: "AAA"), 0)
+    }
+
+    func test_spaceType_singleSharedSpace_usesOnlyEntry() {
+        // 关闭「显示器具有单独的空间」时只有一项,标识为 "Main"
+        XCTAssertEqual(FullscreenDetector.currentSpaceType(in: [display("Main", type: 4)], displayID: "AAA"), 4)
+    }
+
+    func test_spaceType_unknownDisplayAmongMany_returnsNil() {
+        let displays = [display("AAA", type: 0), display("BBB", type: 4)]
+        XCTAssertNil(FullscreenDetector.currentSpaceType(in: displays, displayID: "CCC"))
+        XCTAssertNil(FullscreenDetector.currentSpaceType(in: [], displayID: "AAA"))
+    }
+
     func test_windowOnOtherScreen_isIgnored() {
         let w = FullscreenDetector.WindowInfo(layer: 0, ownerPID: otherPID,
                                               bounds: CGRect(x: 1800, y: 0, width: 2560, height: 1440))
