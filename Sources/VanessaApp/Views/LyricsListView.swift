@@ -60,15 +60,20 @@ private struct LyricsListRow: View {
 
     @State private var hovering = false
 
+    /// 列表行字号:按设置字号的 75% 缩小并限制在 11...15,避免沿用大字号时列表只能显示几行。
+    /// 当前行只用主题色与加粗区分、不放大,切换当前行时列表不会因字号变化而跳动。
+    private var rowFontSize: CGFloat {
+        min(max((fontSize * 0.75).rounded(), 11), 15)
+    }
+
     var body: some View {
         VStack(spacing: 1) {
             Text(line.text)
-                .font(.system(size: isCurrent ? fontSize : fontSize - 1,
-                              weight: isCurrent ? .semibold : .regular))
+                .font(.system(size: rowFontSize, weight: isCurrent ? .semibold : .regular))
                 .foregroundStyle(isCurrent ? accentColor : .white.opacity(0.5))
             if showTranslation, let translation = line.translation {
                 Text(translation)
-                    .font(.system(size: max(fontSize - 3, 9)))
+                    .font(.system(size: max(rowFontSize - 2, 9)))
                     .foregroundStyle(isCurrent ? accentColor.opacity(0.7) : .white.opacity(0.35))
             }
         }
