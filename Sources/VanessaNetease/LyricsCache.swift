@@ -41,6 +41,41 @@ public final class LyricsCache: @unchecked Sendable {
         }
     }
 
+    /// 匹配结果缓存(查询键 → 歌曲 ID);首次访问时从磁盘懒加载。
+    private var matches: [String: Int64]?
+
+    /// 读取某次查询已匹配到的歌曲 ID;未命中返回 nil。
+    /// - Parameter key: 查询键,由仓储层按「歌名 + 歌手 + 时长」拼成。
+    public func songID(forQuery key: String) -> Int64? {
+        queue.sync { loadedMatches()[key] }
+    }
+
+    /// 记录查询的匹配结果,并整体写回磁盘。
+    public func storeSongID(_ id: Int64, forQuery key: String) {
+        queue.sync {
+            var dict = loadedMatches()
+            dict[key] = id
+            matches = dict
+            if let data = try? JSONEncoder().encode(dict) {
+                try? data.write(to: matchesURL, options: .atomic)
+            }
+        }
+    }
+
+    /// 返回内存中的匹配表,首次调用时从磁盘读取(文件缺失或损坏视为空表)。须在 queue 内调用。
+    private func loadedMatches() -> [String: Int64] {
+        if let matches { return matches }
+        let loaded = (try? Data(contentsOf: matchesURL))
+            .flatMap { try? JSONDecoder().decode([String: Int64].self, from: $0) } ?? [:]
+        matches = loaded
+        return loaded
+    }
+
+    /// 匹配表文件;与 `<歌曲ID>.json` 同目录,文件名非数字不会冲突。
+    private var matchesURL: URL {
+        directory.appendingPathComponent("matches.json")
+    }
+
     private func fileURL(_ id: Int64) -> URL {
         directory.appendingPathComponent("\(id).json")
     }

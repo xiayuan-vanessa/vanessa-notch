@@ -27,12 +27,25 @@ public struct NeteaseLyricsRepository: LyricsRepository {
     }
 
     public func lookup(title: String, artist: String, durationMs: Int) async throws -> LyricsLookupResult {
+        // 同一首歌再次播放时直接复用上次的匹配结果,跳过网络搜索
+        let key = Self.matchKey(title: title, artist: artist, durationMs: durationMs)
+        if let cachedID = cache.songID(forQuery: key) {
+            return .matched(songID: cachedID, lyrics: try await lyrics(forSongID: cachedID))
+        }
         let candidates = try await source.search(title: title, artist: artist)
         let query = SongQuery(title: title, artist: artist, durationMs: durationMs)
         guard let best = SongMatcher.bestMatch(for: query, in: candidates) else {
-            return .lowConfidence
+            return .lowConfidence   // 低置信度不缓存,下次播放仍会重新搜索
         }
-        return .matched(songID: best.id, lyrics: try await lyrics(forSongID: best.id))
+        let lyrics = try await lyrics(forSongID: best.id)
+        cache.storeSongID(best.id, forQuery: key)   // 歌词取到后再记录,避免缓存一个取不到歌词的匹配
+        return .matched(songID: best.id, lyrics: lyrics)
+    }
+
+    /// 匹配缓存的查询键。时长取整到秒,吸收系统上报时长的毫秒级抖动;
+    /// 时长不同(如现场版)视为不同查询。
+    static func matchKey(title: String, artist: String, durationMs: Int) -> String {
+        "\(title)|\(artist)|\(durationMs / 1000)"
     }
 
     public func search(keywords: String) async throws -> [SongCandidate] {

@@ -51,6 +51,40 @@ final class NeteaseLyricsRepositoryTests: XCTestCase {
         XCTAssertEqual(src.lyricCalls, 0)
     }
 
+    func test_repeatedLookup_reusesMatchAndSkipsSearch() async throws {
+        let src = FakeSource()
+        src.candidates = [SongCandidate(id: 111, title: "晴天", artists: ["周杰伦"], durationMs: 269000)]
+        src.raw[111] = RawLyrics(lrc: "[00:01.00]行", yrc: nil)
+        let repo = NeteaseLyricsRepository(source: src, cache: tmpCache())
+        _ = try await repo.lookup(title: "晴天", artist: "周杰伦", durationMs: 269000)
+        let result = try await repo.lookup(title: "晴天", artist: "周杰伦", durationMs: 269400)   // 时长毫秒级抖动
+        XCTAssertEqual(src.searchCalls, 1)
+        guard case .matched(let id, _) = result else { return XCTFail("应为 matched") }
+        XCTAssertEqual(id, 111)
+    }
+
+    func test_matchCache_persistsAcrossInstances() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("repo-test-\(UUID().uuidString)")
+        let src = FakeSource()
+        src.candidates = [SongCandidate(id: 111, title: "晴天", artists: ["周杰伦"], durationMs: 269000)]
+        src.raw[111] = RawLyrics(lrc: "[00:01.00]行", yrc: nil)
+        _ = try await NeteaseLyricsRepository(source: src, cache: LyricsCache(directory: dir))
+            .lookup(title: "晴天", artist: "周杰伦", durationMs: 269000)
+        // 新的缓存实例(模拟重启 App)应从磁盘读到匹配结果
+        _ = try await NeteaseLyricsRepository(source: src, cache: LyricsCache(directory: dir))
+            .lookup(title: "晴天", artist: "周杰伦", durationMs: 269000)
+        XCTAssertEqual(src.searchCalls, 1)
+    }
+
+    func test_lowConfidence_isNotCached() async throws {
+        let src = FakeSource()
+        src.candidates = [SongCandidate(id: 999, title: "毫不相干XYZ", artists: ["别人"], durationMs: 999000)]
+        let repo = NeteaseLyricsRepository(source: src, cache: tmpCache())
+        _ = try await repo.lookup(title: "原曲ABC", artist: "原唱", durationMs: 100000)
+        _ = try await repo.lookup(title: "原曲ABC", artist: "原唱", durationMs: 100000)
+        XCTAssertEqual(src.searchCalls, 2)
+    }
+
     func test_emptyCandidates_lowConfidence() async throws {
         let repo = NeteaseLyricsRepository(source: FakeSource(), cache: tmpCache())
         let result = try await repo.lookup(title: "x", artist: "y", durationMs: 1000)
