@@ -34,6 +34,8 @@ struct PlayingPanelView: View {
     /// 是否展开播放控制区(悬停触发)。
     var expanded: Bool = false
     var onCommand: (MediaCommand) -> Void = { _ in }
+    /// 跳转到指定进度(秒)。
+    var onSeek: (Double) -> Void = { _ in }
 
     /// 封面在顶行(收起)与控制区(展开)之间做共享元素过渡的命名空间。
     @Namespace private var coverNamespace
@@ -65,7 +67,7 @@ struct PlayingPanelView: View {
             Spacer(minLength: 0)
             if expanded {
                 PlaybackControlsView(display: display, accentColor: accentColor,
-                                     coverNamespace: coverNamespace, onCommand: onCommand)
+                                     coverNamespace: coverNamespace, onCommand: onCommand, onSeek: onSeek)
                     .transition(.opacity)
             }
         }

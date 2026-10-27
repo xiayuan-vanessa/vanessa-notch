@@ -44,6 +44,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                                 self?.windowController.contentSize = Self.idleSize
                             },
                             onCommand: { [weak self] in self?.provider.send($0) },
+                            onSeek: { [weak self] in self?.seek(toSeconds: $0) },
                             onCorrectLyrics: { [weak self] in self?.openLyricsCorrection() })
         windowController = NotchWindowController(rootView: AnyView(root), metrics: metrics)
         windowController.contentSize = playingSize()   // 初始给播放尺寸(取自设置)
@@ -209,6 +210,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         quit.target = self
         menu.addItem(quit)
         return menu
+    }
+
+    /// 跳转播放进度:通知播放器跳转,并在本地乐观更新时钟让界面立即跟上。
+    private func seek(toSeconds seconds: Double) {
+        provider.seek(toSeconds: seconds)
+        appState.applySeek(toSeconds: seconds)
     }
 
     /// 退出 App。

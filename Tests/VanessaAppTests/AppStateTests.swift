@@ -208,6 +208,31 @@ final class AppStateTests: XCTestCase {
         guard case .playing = state.ui else { return XCTFail("提前恢复播放不应收起") }
     }
 
+    // MARK: - 跳转
+
+    /// 跳转后进度与歌词行应立即更新到目标位置;超过总时长时夹到总时长。
+    /// 用暂停态,使时钟不随真实时间前进,断言稳定。
+    func test_applySeek_updatesElapsedAndLineImmediately() async {
+        let p = FakeProvider()
+        let lyrics = Lyrics(lines: [LyricLine(startMs: 0, endMs: 100_000, text: "第一句", words: []),
+                                    LyricLine(startMs: 100_000, endMs: 200_000, text: "第二句", words: [])])
+        let state = AppState(provider: p, repository: FakeRepo(result: .matched(songID: 1, lyrics: lyrics)),
+                             preferences: isolatedPreferences())
+        state.lyricLeadMs = 0
+        state.start()
+        p.emit(paused(playing("晴天", "周杰伦")))
+        await state.drainForTesting()
+
+        state.applySeek(toSeconds: 120)
+        guard case .playing(let d) = state.ui else { return XCTFail("应处于 playing") }
+        XCTAssertEqual(d.elapsed, 120, accuracy: 0.001)
+        XCTAssertEqual(d.lineText, "第二句")
+
+        state.applySeek(toSeconds: 999)
+        guard case .playing(let d2) = state.ui else { return XCTFail("应处于 playing") }
+        XCTAssertEqual(d2.elapsed, 200, accuracy: 0.001, "超过总时长应夹到总时长")
+    }
+
     func test_songOffset_persistsAndZeroRemoves() {
         let prefs = isolatedPreferences()
         prefs.setOffsetMs(300, for: "a")

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 悬停展开的播放控制区:封面 + 歌名/歌手 + 上一首 / 播放暂停 / 下一首,下方进度条。
 struct PlaybackControlsView: View {
-    /// 面板展开时增加的高度(pt)。控制区内容约 57pt,余量用于容纳译文行等,避免挤压歌词。
+    /// 面板展开时增加的高度(pt)。控制区内容约 58pt,余量用于容纳译文行等,避免挤压歌词。
     static let height: CGFloat = 64
     /// 展开后封面边长(pt)。
     private static let coverSize: CGFloat = 40
@@ -12,9 +12,13 @@ struct PlaybackControlsView: View {
     /// 与面板顶行封面共享的过渡命名空间,让封面在收起/展开间平滑放大移动。
     var coverNamespace: Namespace.ID
     var onCommand: (MediaCommand) -> Void
+    /// 拖动进度条松手后跳转,参数为目标进度(秒)。
+    var onSeek: (Double) -> Void = { _ in }
 
     /// 鼠标是否悬停在进度条上(悬停时进度条变粗)。
     @State private var hoveringProgress = false
+    /// 拖动中的进度比例 0...1;nil 表示未在拖动。拖动期间进度条与时间显示跟随手指而非实际播放进度。
+    @State private var dragFraction: CGFloat?
 
     var body: some View {
         VStack(spacing: 6) {
@@ -50,24 +54,42 @@ struct PlaybackControlsView: View {
     }
 
     /// 进度行:已播时长 — 进度条 — 总时长。
-    /// 进度条放在固定 6pt 高的槽内垂直居中,悬停时从 3pt 变粗到 5pt 不会挤动布局。
+    /// 进度条放在固定 12pt 高的槽内垂直居中(整槽可拖动,便于点中),悬停或拖动时从 3pt 变粗到 5pt 不会挤动布局。
     private var progressRow: some View {
         HStack(spacing: 6) {
-            timeLabel(display.elapsed)
+            timeLabel(dragFraction.map { Double($0) * display.duration } ?? display.elapsed)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(.white.opacity(0.2))
-                    Capsule().fill(accentColor).frame(width: geo.size.width * fraction)
+                    Capsule().fill(accentColor).frame(width: geo.size.width * (dragFraction ?? fraction))
                 }
-                .frame(height: hoveringProgress ? 5 : 3)
+                .frame(height: hoveringProgress || dragFraction != nil ? 5 : 3)
                 .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(seekGesture(width: geo.size.width))
             }
-            .frame(height: 6)
+            .frame(height: 12)
             .onHover { hovering in
                 withAnimation(.easeOut(duration: 0.15)) { hoveringProgress = hovering }
             }
             timeLabel(display.duration)
         }
+    }
+
+    /// 进度条拖动手势:按下即开始跟随(点击也算一次跳转),松手时按最终位置跳转。总时长未知时不响应。
+    /// - Parameter width: 进度条可拖动区域宽度(pt)
+    private func seekGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                guard display.duration > 0, width > 0 else { return }
+                dragFraction = min(max(value.location.x / width, 0), 1)
+            }
+            .onEnded { value in
+                defer { dragFraction = nil }
+                guard display.duration > 0, width > 0 else { return }
+                let f = min(max(value.location.x / width, 0), 1)
+                onSeek(Double(f) * display.duration)
+            }
     }
 
     /// 播放进度比例 0...1;总时长未知时为 0。

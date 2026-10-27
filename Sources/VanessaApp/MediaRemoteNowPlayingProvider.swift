@@ -82,6 +82,23 @@ public final class MediaRemoteNowPlayingProvider: NowPlayingProvider, @unchecked
         }
     }
 
+    /// 让当前播放应用跳转到指定进度(经 adapter 的 seek 子命令,一次性短进程)。
+    /// - Parameter seconds: 目标进度(秒);负值按 0 处理。
+    /// 资源缺失或进程启动失败时仅记录日志。
+    public func seek(toSeconds seconds: Double) {
+        guard FileManager.default.fileExists(atPath: scriptPath),
+              FileManager.default.fileExists(atPath: frameworkPath) else { return }
+        let micros = Int64(max(seconds, 0) * 1_000_000)   // adapter 的 seek 参数单位为微秒
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: perlPath)
+        proc.arguments = [scriptPath, frameworkPath, "seek", String(micros)]
+        do {
+            try proc.run()
+        } catch {
+            NSLog("[Vanessa-Notch] 跳转到 %.1f 秒失败: %@", seconds, String(describing: error))
+        }
+    }
+
     /// 累积字节,按换行切分;按 adapter 信封合并 full/diff 行,解码后推流。
     private func consume(_ data: Data) {
         guard !data.isEmpty else { return }

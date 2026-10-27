@@ -14,6 +14,8 @@ struct RootView: View {
     var onShrinkComplete: (() -> Void)?
     /// 控制区按钮发出的播放命令。
     var onCommand: (MediaCommand) -> Void = { _ in }
+    /// 跳转到指定进度(秒)。
+    var onSeek: (Double) -> Void = { _ in }
     /// 打开「校正歌词」窗口。
     var onCorrectLyrics: () -> Void = {}
 
@@ -45,7 +47,8 @@ struct RootView: View {
                                  notchHeight: metrics.notchHeight,
                                  lyricTopOffset: CGFloat(settings.lyricTopOffset),
                                  expanded: expanded,
-                                 onCommand: onCommand)
+                                 onCommand: onCommand,
+                                 onSeek: onSeek)
                     .opacity(morphProgress)
             }
 

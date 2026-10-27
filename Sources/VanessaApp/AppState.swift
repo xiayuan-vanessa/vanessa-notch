@@ -230,6 +230,21 @@ public final class AppState: ObservableObject {
         }
     }
 
+    // MARK: - 跳转
+
+    /// 跳转后的本地乐观更新:立即按目标进度重建时钟并刷新,让进度条与歌词马上跟上,
+    /// 不必等播放器回报(回报到达且时序字段变化时照常重建时钟,以真实进度为准)。
+    /// 实际向播放器发送跳转命令由调用方负责。
+    /// - Parameter seconds: 目标进度(秒);越界时夹到 [0, 总时长]。未在播放时忽略。
+    public func applySeek(toSeconds seconds: Double) {
+        guard let state = latestState else { return }
+        let upper = state.duration > 0 ? state.duration : max(seconds, 0)
+        let target = min(max(seconds, 0), upper)
+        clock = PlaybackClock(elapsed: target, sampledAt: Date(), rate: state.rate,
+                              isPlaying: state.isPlaying, duration: state.duration)
+        refresh()
+    }
+
     // MARK: - 播放/暂停联动
 
     /// 按播放状态切换刷新定时器与暂停收起计时:
