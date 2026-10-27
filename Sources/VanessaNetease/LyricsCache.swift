@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import VanessaCore
 
 /// 歌词缓存:内存字典(快)+ 磁盘 JSON(跨进程持久)。按歌曲 ID。线程安全(串行队列)。
@@ -74,6 +75,33 @@ public final class LyricsCache: @unchecked Sendable {
     /// 匹配表文件;与 `<歌曲ID>.json` 同目录,文件名非数字不会冲突。
     private var matchesURL: URL {
         directory.appendingPathComponent("matches.json")
+    }
+
+    // MARK: - 兜底源歌词(按查询键)
+
+    /// 读取兜底源(QQ 音乐 / LRCLIB 等)为某次查询找到的歌词;未命中返回 nil。
+    /// - Parameter key: 查询键,与匹配缓存同一套「歌名|歌手|时长秒」。
+    public func fallbackLyrics(forQuery key: String) -> Lyrics? {
+        queue.sync {
+            guard let data = try? Data(contentsOf: fallbackURL(key)) else { return nil }
+            return try? JSONDecoder().decode(Lyrics.self, from: data)
+        }
+    }
+
+    /// 记录兜底源为某次查询找到的歌词(写磁盘)。
+    public func storeFallbackLyrics(_ lyrics: Lyrics, forQuery key: String) {
+        queue.sync {
+            if let data = try? JSONEncoder().encode(lyrics) {
+                try? data.write(to: fallbackURL(key), options: .atomic)
+            }
+        }
+    }
+
+    /// 兜底歌词文件:查询键可能含任意字符,取 SHA256 十六进制作文件名;
+    /// 加 `fallback-` 前缀,避免与 `<歌曲ID>.json` 冲突。
+    private func fallbackURL(_ key: String) -> URL {
+        let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+        return directory.appendingPathComponent("fallback-\(digest).json")
     }
 
     private func fileURL(_ id: Int64) -> URL {

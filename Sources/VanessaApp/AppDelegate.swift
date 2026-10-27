@@ -30,7 +30,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let paths = adapterPaths()
         provider = MediaRemoteNowPlayingProvider(scriptPath: paths.script, frameworkPath: paths.framework)
         let cache = LyricsCache()
-        let repository = NeteaseLyricsRepository(source: NeteaseAPIClient(), cache: cache)
+        // 歌词源:网易云优先;匹配不到时依次兜底 QQ 音乐(中文)、LRCLIB(英文 / 日文)
+        let repository = FallbackLyricsRepository(
+            primary: NeteaseLyricsRepository(source: NeteaseAPIClient(), cache: cache),
+            sources: [QQMusicLyricsSource(), LRCLIBLyricsSource()],
+            cache: cache)
         appState = AppState(provider: provider, repository: repository)
         appState.lyricLeadMs = settings.lyricOffsetMs   // 初始歌词偏移
         appState.pauseHideDelay = settings.pauseHideSeconds   // 初始暂停收起延时
