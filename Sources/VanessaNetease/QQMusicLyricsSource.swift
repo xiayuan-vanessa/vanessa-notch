@@ -14,6 +14,7 @@ public struct QQMusicLyricsSource: FallbackLyricsSource {
 
     public func lyrics(title: String, artist: String, durationMs: Int) async throws -> Lyrics? {
         let songs = try await search(keywords: "\(title) \(artist)".trimmingCharacters(in: .whitespaces))
+            .filter { VersionFilter.isSameVersion(candidateTitle: $0.candidate.title, playingTitle: title) }
         let query = SongQuery(title: title, artist: artist, durationMs: durationMs)
         guard let best = SongMatcher.bestMatch(for: query, in: songs.map(\.candidate)),
               let mid = songs.first(where: { $0.candidate.id == best.id })?.mid else { return nil }

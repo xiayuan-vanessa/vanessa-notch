@@ -16,6 +16,7 @@ public struct LRCLIBLyricsSource: FallbackLyricsSource {
     public func lyrics(title: String, artist: String, durationMs: Int) async throws -> Lyrics? {
         let tracks = try await search(title: title, artist: artist).filter {
             !$0.instrumental && !($0.syncedLyrics ?? "").isEmpty
+                && VersionFilter.isSameVersion(candidateTitle: $0.trackName, playingTitle: title)
         }
         let candidates = tracks.map {
             SongCandidate(id: $0.id, title: $0.trackName, artists: [$0.artistName],

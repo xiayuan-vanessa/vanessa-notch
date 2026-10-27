@@ -76,6 +76,27 @@ public struct FallbackLyricsRepository: LyricsRepository {
     }
 }
 
+/// 兜底源选歌前的版本过滤。
+/// SongMatcher 归一化时会去掉括号内容,「江南 (2023…演唱会武汉站)」「江南 (Live)」都会被当成「江南」;
+/// 兜底源候选少,遇到时长相近的现场版 / 混音版等另一段录音就会选中,歌词时间轴整体错位。
+/// 因此兜底源只保留与正在播放的标题版本一致的候选:候选带版本标记而播放标题没有时排除。
+enum VersionFilter {
+    /// 版本标记(小写比较)。「版」覆盖 DJ版 / 粤语版 / 鼓点版等各类改编版本。
+    static let markers = ["live", "现场", "演唱会", "巡回", "remix", "混音", "dj", "伴奏",
+                          "instrumental", "inst.", "纯音乐", "翻唱", "cover", "加速", "降调", "粤语", "版"]
+
+    /// 判断候选标题与正在播放的标题是否为同一版本。
+    /// - Parameters:
+    ///   - candidateTitle: 兜底源候选的原始标题(未归一化)。
+    ///   - playingTitle: 正在播放的标题。
+    /// - Returns: 候选不含播放标题所没有的版本标记时为 true。
+    static func isSameVersion(candidateTitle: String, playingTitle: String) -> Bool {
+        let candidate = candidateTitle.lowercased()
+        let playing = playingTitle.lowercased()
+        return !markers.contains { candidate.contains($0) && !playing.contains($0) }
+    }
+}
+
 /// 兜底源共用的 HTTP GET:带超时与自定义请求头,并校验状态码。
 enum LyricsHTTP {
     /// 单次请求超时(秒)。兜底源依次串行尝试,单源卡住不应拖慢整条链太久。
